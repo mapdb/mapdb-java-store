@@ -207,6 +207,9 @@ public class StoreDirectCompactionTailTest {
             assertRefusesReopen(f);
         } finally {
             StoreDirect.testCompactCrashHook = null;
+            // A compaction fault marks the store closed but deliberately retains its resources
+            // until close(); release the file lock before cleanup removes its private directory.
+            s.close();
         }
         assertTrue(crashed);
     }
@@ -235,6 +238,9 @@ public class StoreDirectCompactionTailTest {
             assertRefusesReopen(f);
         } finally {
             StoreDirect.testCompactCrashHook = null;
+            // A compaction fault marks the store closed but deliberately retains its resources
+            // until close(); release the file lock before cleanup removes its private directory.
+            s.close();
         }
         assertTrue(crashed);
     }
