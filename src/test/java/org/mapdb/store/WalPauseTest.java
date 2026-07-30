@@ -20,33 +20,34 @@ import java.util.Random;
  * The half {@code WalWriteAmplificationTest} cannot see: <b>COMMIT PAUSE DISTRIBUTION
  * and LOG HIGH-WATER</b>.
  *
- * <p>§11 step 4 predicts device bytes are <em>unchanged</em> by R2 — §0.2 already showed the byte
- * win was never there — so the only measurement that can falsify or confirm the step-3 claim is
- * this one. The claim under test: replacing {@code checkpointLocked} (a whole-store image written
- * under the exclusive write lock on every trigger crossing) with a budgeted incremental cleaner
- * bounds the pause a single commit can pay, at the cost of a log that is cleaned lazily and may
- * therefore sit higher above its trigger target.
+ * <p>§11 predicts device bytes are <em>unchanged</em> by R2 — §0.2 already showed the byte win was
+ * never there — so the only measurement that can falsify or confirm the incremental cleaner's
+ * claim is this one. The claim under test: replacing {@code checkpointLocked} (a whole-store image
+ * written under the exclusive write lock on every trigger crossing) with a budgeted incremental
+ * cleaner bounds the pause a single commit can pay, at the cost of a log that is cleaned lazily
+ * and may therefore sit higher above its trigger target.
  *
  * <p><b>Both numbers matter together</b>, which is why one harness takes both. A cleaner that
  * bounds the pause by never cleaning would win the pause column and lose the log; a cleaner that
- * holds the log at the target by doing the whole rewrite inline is what step 3 replaced.
+ * holds the log at the target by doing the whole rewrite inline is what the incremental cleaner
+ * replaced.
  *
  * <p><b>Cross-revision by construction.</b> This file is meant to be copied verbatim onto the
- * pre-step-3 revision and run there for the "before" column, so every API that step 3 changed is
- * reached by reflection: the trigger is {@code setAutoCheckpointBytes} before and
- * {@code setMinLogBytes}/{@code setSpaceAmplification} after. Nothing else in the measured path
- * differs. Log size is the sum of every file sharing the db name prefix — the same
- * segmentation-agnostic definition {@code WalWriteAmplificationTest} uses — so it is one metric
- * across a single-file rewrite and a segment set.
+ * whole-store-checkpoint revision and run there for the "before" column, so every API the
+ * incremental cleaner changed is reached by reflection: the trigger is
+ * {@code setAutoCheckpointBytes} before and {@code setMinLogBytes}/{@code setSpaceAmplification}
+ * after. Nothing else in the measured path differs. Log size is the sum of every file sharing the
+ * db name prefix — the same segmentation-agnostic definition {@code WalWriteAmplificationTest}
+ * uses — so it is one metric across a single-file rewrite and a segment set.
  *
  * <p>Pauses are reported as a <b>distribution</b> (p50/p99/p99.9/max), never a mean: a whole-store
  * checkpoint is a rare event by construction, so a mean hides exactly the thing being measured.
  *
  * <p><b>Run it on a real filesystem.</b> {@code java.io.tmpdir} is tmpfs on this machine, where
  * {@code fsync} is a no-op and a whole-store checkpoint degenerates to a memcpy — which biases the
- * measurement squarely AGAINST the thing being tested, since the pause step 3 removes is mostly
- * bytes-plus-force. {@code -Dmapdb5.pause.dir} selects the directory and defaults to
- * {@code target/pause-bench} under the module, which is on disk.
+ * measurement squarely AGAINST the thing being tested, since the pause the incremental cleaner
+ * removes is mostly bytes-plus-force. {@code -Dmapdb5.pause.dir} selects the directory and
+ * defaults to {@code target/pause-bench} under the module, which is on disk.
  *
  * <p>This is a MEASUREMENT, not a target assertion: it prints tables and asserts only liveness.
  * Run: {@code mvn -o test -Dtest=WalPauseTest -DfailIfNoTests=false}
@@ -62,14 +63,14 @@ public class WalPauseTest {
     private static final int OPS = Integer.getInteger("mapdb5.pause.ops", 60_000);
 
     /**
-     * The trigger floor, set identically on both revisions. Before step 3 the trigger is
-     * {@code max(autoCheckpointBytes, 2 × log-size-after-last-clean)}; after it is
-     * {@code max(minLogBytes, spaceAmplification × liveDataBytes)}. With the floor equal and the
-     * multiplier 2 on both sides, the two targets are the same number to within the difference
-     * between "log bytes right after a full rewrite" and "the inner store's page-granular
-     * footprint" — a few hundred KB on this workload. That equality is what makes the log
-     * high-water columns comparable, and it is the reason the floor is set explicitly rather than
-     * left at either revision's 1 GiB default (which this workload never reaches).
+     * The trigger floor, set identically on both revisions. In the whole-store-checkpoint revision
+     * the trigger is {@code max(autoCheckpointBytes, 2 × log-size-after-last-clean)}; with the
+     * incremental cleaner it is {@code max(minLogBytes, spaceAmplification × liveDataBytes)}. With
+     * the floor equal and the multiplier 2 on both sides, the two targets are the same number to
+     * within the difference between "log bytes right after a full rewrite" and "the inner store's
+     * page-granular footprint" — a few hundred KB on this workload. That equality is what makes
+     * the log high-water columns comparable, and it is the reason the floor is set explicitly
+     * rather than left at either revision's 1 GiB default (which this workload never reaches).
      */
     private static final long TRIGGER_FLOOR = 8L << 20;
 
@@ -125,7 +126,7 @@ public class WalPauseTest {
      * previously seen)}: WAL files only ever grow and then vanish at retirement, so this is an
      * exact count of what reached the device, INCLUDING whatever cleaning re-emitted — which the
      * size alone cannot show, since retirement takes those bytes back off the disk. That is the
-     * term §11 step 4 predicts is unchanged, and it is the price of the pause win if it is not.
+     * term §11 predicts is unchanged, and it is the price of the pause win if it is not.
      */
     private static final class LogWatch {
         private final Path dir;
@@ -172,9 +173,10 @@ public class WalPauseTest {
     }
 
     /**
-     * The trigger's current target. Post-step-3 the store computes it; pre-step-3 it is
-     * {@code max(autoCheckpointBytes, 2 × checkpointBasis)}, read off the private fields because
-     * no accessor exists there. Returns -1 if neither shape is found.
+     * The trigger's current target. With the incremental cleaner the store computes it; in the
+     * whole-store-checkpoint revision it is {@code max(autoCheckpointBytes, 2 × checkpointBasis)},
+     * read off the private fields because no accessor exists there. Returns -1 if neither shape is
+     * found.
      */
     private static long cleaningTarget(StoreWAL s) {
         try {
@@ -232,7 +234,7 @@ public class WalPauseTest {
                     r.target() > 0 ? r.highWater() / (double) r.target() : -1.0,
                     r.finalLog(), r.checkpointNanos() / 1000.0));
         }
-        sb.append("\n=== ").append(title).append(" — DEVICE BYTES (§11 step 4 predicts UNCHANGED) ===\n");
+        sb.append("\n=== ").append(title).append(" — DEVICE BYTES (§11 predicts UNCHANGED) ===\n");
         sb.append(String.format("%-34s %16s %14s%n", "subject", "bytes appended", "bytes/op"));
         for (Run r : runs) {
             sb.append(String.format("%-34s %16d %14.1f%n", r.subject(), r.appended(),
@@ -308,24 +310,24 @@ public class WalPauseTest {
     }
 
     /**
-     * <b>The measurement that decides whether step 3 delivers anything.</b>
+     * <b>The measurement that decides whether the incremental cleaner delivers anything.</b>
      *
      * <p>A single store size cannot test R2's claim, and reading one as if it could is the trap
-     * this test exists to avoid. What step 3 removed is a pause of <b>O(store bytes)</b>
-     * ({@code checkpointLocked} rewrote the whole committed store under the exclusive write lock);
-     * what it put in its place is a pause bounded by a fixed per-commit budget. At a small store
-     * the removed term is <em>cheap</em> — a few MB of image — and the fixed overheads of
-     * incremental cleaning (a seal, a rollover with its {@code force(true)} and directory fsync,
-     * W10's verification scan, and FIFO re-emission of a mostly-live oldest segment) can easily
-     * cost more. So the honest question is not "which is faster" but <b>where the two curves
-     * cross</b>: below the crossover step 3 is a regression, above it a win that grows without
-     * bound.
+     * this test exists to avoid. What the incremental cleaner removed is a pause of <b>O(store
+     * bytes)</b> ({@code checkpointLocked} rewrote the whole committed store under the exclusive
+     * write lock); what it put in its place is a pause bounded by a fixed per-commit budget. At a
+     * small store the removed term is <em>cheap</em> — a few MB of image — and the fixed overheads
+     * of incremental cleaning (a seal, a rollover with its {@code force(true)} and directory
+     * fsync, W10's verification scan, and FIFO re-emission of a mostly-live oldest segment) can
+     * easily cost more. So the honest question is not "which is faster" but <b>where the two
+     * curves cross</b>: below the crossover the incremental cleaner is a regression, above it a
+     * win that grows without bound.
      *
      * <p>Run on tmpfs deliberately: {@code fsync} is free there, so what is left is the work done
-     * while holding the write lock, which is the quantity the design bounds. Maintenance is OFF, so
-     * both revisions do their cleaning on the commit path — pre-step-3's {@code WalCheckpointTask}
-     * could only choose the moment of a pause, never shorten it, so leaving it out compares the two
-     * mechanisms rather than two schedulers.
+     * while holding the write lock, which is the quantity the design bounds. Maintenance is OFF,
+     * so both revisions do their cleaning on the commit path — the whole-store-checkpoint
+     * revision's {@code WalCheckpointTask} could only choose the moment of a pause, never shorten
+     * it, so leaving it out compares the two mechanisms rather than two schedulers.
      *
      * <p>{@code ops} is scaled per size to ~2.5× the trigger target, so each row crosses the
      * trigger a similar number of times rather than a number that shrinks as the target grows.
@@ -348,16 +350,17 @@ public class WalPauseTest {
     /**
      * {@code checkpoint()} — and therefore {@code compact()} — timed on <b>equal input</b>.
      *
-     * <p>The main run reports a checkpoint time too, but it takes it at the end of a workload where
-     * the two revisions leave differently-sized logs behind (pre-step-3 collapses the log on its
-     * last automatic checkpoint; post-step-3 leaves it near the target), so that comparison is
-     * confounded by ~2× of input. Here the log is driven to a fixed byte count with automatic
-     * cleaning DISABLED, so both revisions checkpoint the same bytes.
+     * <p>The main run reports a checkpoint time too, but it takes it at the end of a workload
+     * where the two revisions leave differently-sized logs behind (the whole-store-checkpoint
+     * revision collapses the log on its last automatic checkpoint; the incremental cleaner leaves
+     * it near the target), so that comparison is confounded by ~2× of input. Here the log is
+     * driven to a fixed byte count with automatic cleaning DISABLED, so both revisions checkpoint
+     * the same bytes.
      *
-     * <p>This is the path step 3 did not set out to improve — {@code checkpoint()} is deliberately
-     * the unbounded on-demand wide pass, and §5.5 [v9] names it as the answer to a terminal
-     * concluded at the pause-capped width. It is measured because it is public API and because a
-     * regression here is paid by every caller of {@code compact()}.
+     * <p>This is the path the incremental cleaner did not set out to improve —
+     * {@code checkpoint()} is deliberately the unbounded on-demand wide pass, and §5.5 [v9] names
+     * it as the answer to a terminal concluded at the pause-capped width. It is measured because
+     * it is public API and because a regression here is paid by every caller of {@code compact()}.
      */
     @Test
     public void checkpoint_pause_on_equal_input() throws Exception {

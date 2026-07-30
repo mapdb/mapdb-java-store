@@ -25,7 +25,7 @@ import static org.junit.Assert.fail;
  * floor, no lookahead pass).
  *
  * <p>The hand-built logs below are the point of this file. A delta whose base image is no
- * longer in the log is exactly what segment cleaning will produce in step 2 — the shape that
+ * longer in the log is exactly what segment cleaning will produce — the shape that
  * the deleted floor design got wrong twice — so the decisions it forces are pinned here
  * BEFORE the mechanism that produces it exists, against crafted images rather than against a
  * cleaner that could be wrong in the same direction as the reader.

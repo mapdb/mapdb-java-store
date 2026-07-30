@@ -169,7 +169,7 @@ public class StoreWALCheckpointTest {
             s.checkpoint();
             // Cleaning an empty store writes NOTHING. The store opened with one empty segment;
             // there is nothing below it to retire, so there is no cycle, no image and no mark
-            // (a 'K' attesting cleanedThroughSeq 0 is corruption by S8 anyway). Step 2's
+            // (a 'K' attesting cleanedThroughSeq 0 is corruption by S8 anyway). The earlier
             // whole-store stand-in wrote an empty 'C' here and then, on the second call, rolled
             // and retired segment 1 — two sections and a segment burnt to represent nothing.
             s.checkpoint();

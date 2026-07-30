@@ -12,7 +12,7 @@ public class DBException extends RuntimeException {
         public GetVoid(long recid) { super("Record does not exist, recid=" + recid); }
     }
 
-    /** Record exceeds the maximum plain-record capacity (linked records are phase 2). */
+    /** Record exceeds the maximum plain-record capacity. */
     public static class RecordTooLarge extends DBException {
         public RecordTooLarge(long size) { super("Record too large: " + size + " bytes"); }
     }

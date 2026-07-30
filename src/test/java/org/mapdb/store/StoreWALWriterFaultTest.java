@@ -30,9 +30,9 @@ import static org.junit.Assert.fail;
  * operation Y completed". None of them leaves a trace in the resulting bytes — a log written in the
  * wrong order and one written in the right order are byte-identical, and differ only in which
  * crashes they survive. So until this class they were held by <b>structural argument alone</b>: the
- * calls appear in the right order in the source, and nothing checked that they still did. Step 2's
- * handover named that as the top unproven surface, step 3's cleaner gave P11 a <em>second</em>
- * writer, and step 4's measurement then picked it as the next item.
+ * calls appear in the right order in the source, and nothing checked that they still did. That left
+ * them the top unproven surface, and the incremental cleaner made it more pressing still by giving
+ * P11 a <em>second</em> writer.
  *
  * <p>The instrument is {@link StoreWAL.WalIo}, a seam every durability-relevant file operation
  * reports to. A run of a realistic history yields a trace, and {@link #checkWriterObligations} is

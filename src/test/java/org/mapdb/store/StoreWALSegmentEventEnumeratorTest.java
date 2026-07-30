@@ -24,7 +24,7 @@ import static org.junit.Assert.fail;
  * histories against an oracle but, by its own admission (item 5 of its "what it cannot find"
  * list), is blind to everything the segment set added: rollover, the {@code 'K'} clean mark,
  * unlink, and the crash points between them. Both confirmed defects lived in that
- * enumerator's blind spots, and the one real defect step 2 found — pass 1 carrying
+ * enumerator's blind spots, and the one real defect the segment-set work found — pass 1 carrying
  * {@code lastLsn} across a segment boundary — lives in exactly this one. So the events get
  * enumerated too.
  *
@@ -62,9 +62,8 @@ import static org.junit.Assert.fail;
  *
  * <p><b>What this still cannot find</b>, so the bound is not mistaken for completeness: bit rot
  * inside a section body (the CRC-domain tests in {@link StoreWALSegmentSetTest} carry that),
- * durable-write faults below the channel (no injector exists — see the step-2 handover), the
- * capacity straddle, and anything needing more than {@value #MAX_RECIDS} recids or depth
- * {@value #DEFAULT_DEPTH}.
+ * durable-write faults below the channel (no injector exists), the capacity straddle, and
+ * anything needing more than {@value #MAX_RECIDS} recids or depth {@value #DEFAULT_DEPTH}.
  */
 public class StoreWALSegmentEventEnumeratorTest {
 

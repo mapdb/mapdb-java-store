@@ -32,8 +32,8 @@ import static org.junit.Assert.fail;
  * whole-log clean re-emits every record, so it can never under-re-emit; it retires the segment
  * holding the previous mark, so an older mark never survives; and it leaves a retained set that is
  * a checkpoint image with nothing else in it. <b>Every test below is about a PARTIAL
- * retirement</b>, which is the state the step-2 stand-in could not produce and the one all of R4
- * has to accept.
+ * retirement</b>, which is the state the earlier whole-store stand-in could not produce and the
+ * one all of R4 has to accept.
  *
  * <p>Segments are held at their minimum size throughout, so "the oldest segment" is a single
  * section and a handful of commits is a multi-segment log.
@@ -791,7 +791,7 @@ public class StoreWALCleanerTest {
      * The tick's work unit is an ENTRY, not a section. A section may be arbitrarily large — a
      * rollover happens only at a section boundary, so one commit can exceed {@code segmentBytes} on
      * its own — so a per-section unit would have held the WAL write lock for an unbounded time,
-     * which is the pause step 3 exists to remove.
+     * which is the pause the incremental cleaner exists to remove.
      */
     @Test public void a_budget_of_one_record_advances_by_one_entry_inside_a_huge_section() {
         final int records = 200;

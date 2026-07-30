@@ -33,7 +33,7 @@ import static org.junit.Assert.fail;
  * <p><b>What this covers:</b> {@code put}, {@code update}, {@code update-to-null},
  * {@code append}, a rejected {@code append} (bad arguments — the transaction must be
  * unchanged), {@code delete}, {@code preallocate}, {@code commit}, {@code rollback},
- * {@code checkpoint} (step 1b's re-homing event) and {@code reopen}, including consecutive
+ * {@code checkpoint} (the re-homing event) and {@code reopen}, including consecutive
  * reopens, over every live recid.
  *
  * <p><b>What it CANNOT find, stated so the bound is never mistaken for completeness.</b>
@@ -55,9 +55,10 @@ import static org.junit.Assert.fail;
  *       oracle cannot tell them apart even though they are distinct WAL entries with distinct
  *       §4.2 rows.</li>
  *   <li><b>Crash-at-writer-obligation boundaries.</b> With a single log file the only mid-write
- *       boundary is the checkpoint swap, which {@code StoreWALCheckpointTest} covers. When
- *       step 2 introduces segment rollover, unlink and the {@code 'K'} mark, this enumerator
- *       must grow those events and the crash points between them.</li>
+ *       boundary is the checkpoint swap, which {@code StoreWALCheckpointTest} covers. Segment
+ *       rollover, unlink and the {@code 'K'} mark are outside this enumerator — it would have
+ *       to grow those events and the crash points between them;
+ *       {@code StoreWALSegmentEventEnumeratorTest} enumerates them instead.</li>
  *   <li><b>The encoder append path</b> ({@code append(recid, DeltaEncoder)}) and its LSN
  *       reservation; {@code StoreWALDeltaLsnTest} covers that.</li>
  * </ol>

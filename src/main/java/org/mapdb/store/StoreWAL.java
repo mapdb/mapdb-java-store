@@ -79,7 +79,7 @@ import java.util.zip.CRC32;
  *
  * <p>{@link #checkpoint()} bounds the log by <em>cleaning</em>: it rolls to a fresh segment,
  * writes the whole committed store as one {@code 'C'} image, then a forced {@code 'K'} mark
- * authorizing every older segment's removal, and unlinks them. That is the step-3 cleaner with
+ * authorizing every older segment's removal, and unlinks them. That is the incremental cleaner with
  * its budget set to "everything" — the v1 whole-file rewrite and its {@code ATOMIC_MOVE} commit
  * point are gone, along with the {@code .ckpt} temp file.
  */
@@ -252,8 +252,8 @@ public class StoreWAL implements StoreDelta, StoreTx {
      * Ceiling on {@link #cycleWidth}. A cycle's CLOSE is not budgeted — {@code finishCycleLocked}
      * sums the retiring prefix and {@code unlinkThrough} closes, deletes and fsyncs every file in
      * it, all under the write lock — so an uncapped width buys mark amortisation with an unbounded
-     * pause, which is the trade step 3 exists to refuse. Sixty-four segments is 64x the amortisation
-     * of one-at-a-time cleaning and a close of at most 64 file deletions.
+     * pause, which is the trade the incremental cleaner exists to refuse. Sixty-four segments is
+     * 64x the amortisation of one-at-a-time cleaning and a close of at most 64 file deletions.
      */
     private static final int CYCLE_WIDTH_CAP = 64;
     /** @see #cycleWidth */
@@ -1864,7 +1864,7 @@ public class StoreWAL implements StoreDelta, StoreTx {
      * {@link #cleanTickLocked}, and a full clean differs from a background tick only in how many
      * segments one cycle retires and how long it is allowed to run. The v1 whole-file rewrite, its
      * {@code .ckpt} temp file and its {@code ATOMIC_MOVE} commit point are gone, and so is the
-     * step-2 stand-in that wrote the entire store as one image on every trigger.
+     * earlier stand-in that wrote the entire store as one image on every trigger.
      *
      * <p>Safe to call at any time EXCEPT while a transaction holds an LSN reservation (i.e.
      * after an {@link StoreDelta#append(long, StoreDelta.DeltaEncoder)} and before
@@ -2062,7 +2062,7 @@ public class StoreWAL implements StoreDelta, StoreTx {
      * The cleaning trigger: the log is due for cleaning once it exceeds
      * {@code max(minLogBytes, spaceAmplification × liveDataBytes)}. Write lock must be held.
      *
-     * <p>This replaced step 2's {@code max(autoCheckpointBytes, 2 × size-after-last-clean)}, which
+     * <p>This replaced an earlier {@code max(autoCheckpointBytes, 2 × size-after-last-clean)}, which
      * needed a "size right after the last whole-store rewrite" basis that an incremental cleaner
      * never produces — there is no moment at which the log equals the live data. Asking the inner
      * store what it currently holds needs no such moment and is the quantity the target was always
@@ -2297,11 +2297,12 @@ public class StoreWAL implements StoreDelta, StoreTx {
      * <p>Gated on the trigger ALONE, never on "a cycle is open". Continuing an open cycle here
      * regardless would mean the first commit after a background tick started one dragged it to
      * completion synchronously — moving the work back onto the commit path, which is the whole
-     * thing step 3 removes. An abandoned cycle costs nothing durable: its images are forced and its
-     * retired segments simply stay, so the log carries duplicates until someone finishes it, and
-     * the next tick or the next live trigger does. <em>(A previous comment here claimed a fired
-     * trigger necessarily stays fired. It does not: a commit adds page-rounded bytes to the store
-     * and framed bytes to the log, so it can raise the threshold faster than the log.)</em>
+     * thing the incremental cleaner removes. An abandoned cycle costs nothing durable: its images
+     * are forced and its retired segments simply stay, so the log carries duplicates until someone
+     * finishes it, and the next tick or the next live trigger does. <em>(A previous comment here
+     * claimed a fired trigger necessarily stays fired. It does not: a commit adds page-rounded
+     * bytes to the store and framed bytes to the log, so it can raise the threshold faster than
+     * the log.)</em>
      */
     private void autoCleanLocked() {
         try {
@@ -2313,7 +2314,7 @@ public class StoreWAL implements StoreDelta, StoreTx {
             // cannot release it, so a loop here is one uninterrupted hold for the whole pass: the
             // per-tick budget would bound an internal iteration while the commit that triggered it
             // still paid for all of them, consecutively, with every reader and writer waiting. That
-            // is the pause step 3 exists to remove, reappearing on the fallback path.
+            // is the pause the incremental cleaner exists to remove, reappearing on the fallback path.
             // Convergence does not need the loop: a slice re-emits up to 8 MiB and can
             // close a cycle, which retires a whole segment, so it reclaims far more than one commit
             // adds for any ordinary workload.
@@ -2435,18 +2436,18 @@ public class StoreWAL implements StoreDelta, StoreTx {
      *
      * <p><b>O(1).</b> An earlier revision computed the candidate set here by walking the whole
      * {@code stateLsn} map and sorting it, which is O(live recids) under the write lock and is a
-     * pause of the kind step 3 exists to delete — for a large store it is far more work than the
-     * segment being retired even contains. Candidates are now discovered by <b>walking the retiring
-     * range itself</b>, one bounded unit at a time (§5.2 step 1, and §5.5's
-     * {@code (segmentSeq, scanOffset)} cursor).
+     * pause of the kind the incremental cleaner exists to delete — for a large store it is far
+     * more work than the segment being retired even contains. Candidates are now discovered by
+     * <b>walking the retiring range itself</b>, one bounded unit at a time (§5.2 step 1, and
+     * §5.5's {@code (segmentSeq, scanOffset)} cursor).
      *
      * <p>The walk finds every candidate and no others: R needs re-emission exactly when
      * {@code stateLsn[R] <= boundaryLsn}, that value IS the LSN of R's newest self-contained entry,
      * and the retained log begins at {@code boundaryLsn + 1} — so that entry is inside the range,
      * and R's recid therefore appears in the walk. The filter itself stays over {@code stateLsn},
      * which is what keeps a recid an in-flight transaction merely allocated out of the set: such a
-     * recid has no committed entry and so no {@code stateLsn} at all. That is the step-3 blocker
-     * (the predicate over {@code stateLsn}, never {@code recState}) discharged by construction
+     * recid has no committed entry and so no {@code stateLsn} at all. That is the one real blocker
+     * here (the predicate over {@code stateLsn}, never {@code recState}) discharged by construction
      * rather than by a filter a port has to remember.
      *
      * <p>A recid met twice in the range needs no dedup set: the first meeting publishes it and
@@ -2610,7 +2611,7 @@ public class StoreWAL implements StoreDelta, StoreTx {
      * budgeted: the unit is <b>an entry</b>, not a section. A section may be arbitrarily large — a
      * rollover happens only at a section boundary, so one commit can exceed {@code segmentBytes} on
      * its own — so "one section per tick" would have held the write lock for an unbounded time,
-     * which is exactly the pause step 3 removes.
+     * which is exactly the pause the incremental cleaner removes.
      *
      * <p>Payloads are <b>seeked over, not read</b> ({@link WalIn#seek}), so the cost is
      * proportional to the number of entries rather than to the bytes they carry.
