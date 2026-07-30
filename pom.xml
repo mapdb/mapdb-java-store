@@ -53,6 +53,12 @@ on it. Reference implementation for the Rust and Zig ports.</description>
     <properties>
         <maven.compiler.release>17</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <!--
+          Heap for the `*IT.java` suites. The default fits `stress.scale=1.0`
+          (the suites are sized for tens of GiB); on smaller machines override
+          both together, e.g. `-Dit.heap=-Xmx4g -Dstress.scale=0.01`.
+        -->
+        <it.heap>-Xmx48g</it.heap>
     </properties>
 
     <dependencies>
@@ -103,6 +109,19 @@ on it. Reference implementation for the Rust and Zig ports.</description>
                     <argLine>-Xmx2g</argLine>
                 </configuration>
             </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <version>3.4.1</version>
+                <configuration>
+                    <archive>
+                        <manifestEntries>
+                            <!-- Stable module name for JPMS consumers. -->
+                            <Automatic-Module-Name>org.mapdb</Automatic-Module-Name>
+                        </manifestEntries>
+                    </archive>
+                </configuration>
+            </plugin>
         </plugins>
     </build>
 
@@ -124,7 +143,7 @@ on it. Reference implementation for the Rust and Zig ports.</description>
                         <version>3.2.5</version>
                         <configuration>
                             <enableAssertions>true</enableAssertions>
-                            <argLine>-Xmx4g</argLine>
+                            <argLine>${it.heap}</argLine>
                         </configuration>
                         <executions>
                             <execution>
