@@ -1,10 +1,15 @@
 package org.mapdb.store;
 
+import org.mapdb.io.DataOutput2;
+
+import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
 import java.nio.file.Files;
+import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
@@ -15,11 +20,11 @@ import java.util.zip.CRC32;
  * Byte-level helpers for the WAL <b>segment set</b>.
  *
  * <p>Every crash/corruption test in this package used to do surgery on one file at a known
- * offset. Under v2 the log is {@code <db>.wal.<16 hex>}, section CRCs are domain-separated by
- * {@code segmentHeader(28) || be64(sectionOffset)}, and "delete the log" means removing a set of
- * files. Those three facts are easy to get subtly wrong in a test — a section resealed with the
- * v1 CRC recipe simply fails its checksum, and the test then passes for the wrong reason. So the
- * recipe lives here once.
+ * offset. Under the segmented format the log is {@code <db>.wal.<16 hex>}, section CRCs are
+ * domain-separated by {@code segmentHeader(36) || be64(sectionOffset)}, and "delete the log"
+ * means removing a set of files. Those three facts are easy to get subtly wrong in a test — a
+ * section resealed with the v1 CRC recipe simply fails its checksum, and the test then passes
+ * for the wrong reason. So the recipe lives here once.
  */
 public final class WalTestKit {
 
@@ -122,10 +127,10 @@ public final class WalTestKit {
     // ---------- sections ----------
 
     /**
-     * Seeds a CRC with the §6.2 domain separator for a section at {@code off} of this segment:
-     * the 28 header bytes verbatim followed by the big-endian section offset.
+     * Seeds a CRC with the domain separator for a section at {@code off} of this segment:
+     * the {@code SEG_HDR} header bytes verbatim followed by the big-endian section offset.
      */
-    private static CRC32 domain(byte[] seg, int off) {
+    private static CRC32 domain(byte[] seg, long off) {
         CRC32 c = new CRC32();
         c.update(seg, 0, SEG_HDR);
         byte[] o = new byte[8];
@@ -205,6 +210,104 @@ public final class WalTestKit {
         WalSegmentSet.putBe64(body, 0, through);
         WalSegmentSet.putBe64(body, 8, logStartLsn);
         return section(segHeader, off, 'K', lsn, body);
+    }
+
+    /** LSN of a segment image's last whole section — where a foreign appender must continue. */
+    public static long lastLsn(File segment) {
+        byte[] seg = read(segment);
+        int n = sectionCount(seg);
+        if (n == 0) throw new AssertionError("no whole section in " + segment);
+        return lsnOf(seg, sectionOffset(seg, n - 1));
+    }
+
+    // ---------- foreign-writer streaming append ----------
+
+    /**
+     * Streams ONE section onto the end of an existing segment the way a foreign writer — a
+     * port without Java's {@code byte[]} cap — would: positional {@link FileChannel} writes,
+     * the 25-byte header reserved up front and backpatched by {@link #finish()}, the body CRC
+     * accumulated incrementally. No array the size of the body ever exists, so {@code bodyLen}
+     * can exceed 2 GiB — the case the format's int64 {@code bodyLen} is headroom for, which
+     * the Java production writer cannot emit.
+     */
+    public static final class SectionAppender implements Closeable {
+
+        private final FileChannel ch;
+        private final byte[] segHeader = new byte[SEG_HDR];
+        private final long off;
+        private final char tag;
+        private final long lsn;
+        private final CRC32 bodyCrc;
+        private long pos;
+        private boolean finished;
+
+        /** Opens {@code segment} for appending one {@code tag} section holding {@code lsn}. */
+        public static SectionAppender begin(File segment, char tag, long lsn) throws IOException {
+            return new SectionAppender(segment, tag, lsn);
+        }
+
+        private SectionAppender(File segment, char tag, long lsn) throws IOException {
+            this.tag = tag;
+            this.lsn = lsn;
+            ch = FileChannel.open(segment.toPath(), StandardOpenOption.READ, StandardOpenOption.WRITE);
+            try {
+                off = ch.size();
+                ByteBuffer h = ByteBuffer.wrap(segHeader);
+                while (h.hasRemaining()) {
+                    if (ch.read(h, h.position()) < 0) throw new IOException("segment header truncated");
+                }
+                bodyCrc = domain(segHeader, off);
+                pos = off + SEC_HDR;
+            } catch (Throwable t) {
+                ch.close();
+                throw t;
+            }
+        }
+
+        /**
+         * Appends one {@code T_RECORD} entry. {@code cap} follows the writer's encoding:
+         * 16-aligned plain capacity, or 0 for oversize (linked) content; null content means a
+         * null record (cap must then be 0).
+         */
+        public void record(long recid, long cap, byte[] content) throws IOException {
+            DataOutput2 h = new DataOutput2(32);
+            h.writeByte(StoreWAL.T_RECORD);
+            h.packLong(recid);
+            h.packLong(cap);
+            h.packLong(content == null ? 0 : content.length + 1);
+            body(h.buf, 0, h.pos);
+            if (content != null) body(content, 0, content.length);
+        }
+
+        private void body(byte[] b, int o, int len) throws IOException {
+            bodyCrc.update(b, o, len);
+            ByteBuffer bb = ByteBuffer.wrap(b, o, len);
+            while (bb.hasRemaining()) pos += ch.write(bb, pos);
+        }
+
+        /** Backpatches the section header, forces and closes the channel; returns bodyLen. */
+        public long finish() throws IOException {
+            long bodyLen = pos - off - SEC_HDR;
+            byte[] hdr = new byte[SEC_HDR];
+            ByteBuffer bb = ByteBuffer.wrap(hdr);
+            bb.put((byte) tag).putLong(lsn).putLong(bodyLen);
+            CRC32 h = domain(segHeader, off);
+            h.update(hdr, 0, StoreWAL.SEC_HDR_CRC_LEN);
+            bb.putInt(17, (int) h.getValue());
+            bb.putInt(21, (int) bodyCrc.getValue());
+            ByteBuffer w = ByteBuffer.wrap(hdr);
+            long p = off;
+            while (w.hasRemaining()) p += ch.write(w, p);
+            ch.force(false);
+            finished = true;
+            ch.close();
+            return bodyLen;
+        }
+
+        /** Releases the channel if {@link #finish()} was never reached (test failed mid-write). */
+        @Override public void close() throws IOException {
+            if (!finished) ch.close();
+        }
     }
 
     static byte[] concat(byte[]... parts) {

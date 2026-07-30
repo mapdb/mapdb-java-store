@@ -62,7 +62,10 @@ import java.util.zip.CRC32;
  *
  * <p>The length-prefixed, CRC-in-header section means: CRCs are validated BEFORE any entry is
  * decoded (garbage never allocates); replay applies entry-by-entry in O(1) memory; a section
- * body may exceed 2 GiB; and a damaged section FOLLOWED by a valid one is distinguishable from
+ * body may exceed 2 GiB (THIS writer never emits one — {@link DataOutput2} is byte[]-backed and
+ * checkpoint images are chunked ~1 MiB — so the int64 {@code bodyLen} is headroom for foreign
+ * writers; {@code WalHugeSectionIT} replays a crafted one); and a damaged section FOLLOWED by a
+ * valid one is distinguishable from
  * a torn tail — mid-log corruption raises {@link DBException.DataCorruption} instead of silently
  * discarding committed history. W3 (rollover only at a section boundary, after the
  * sealed segment's last section is forced) is what lets a tear in a NON-FINAL segment be called
@@ -85,7 +88,7 @@ import java.util.zip.CRC32;
  */
 public class StoreWAL implements StoreDelta, StoreTx {
 
-    private static final int T_PREALLOC = 1, T_RECORD = 2, T_APPEND = 3, T_DELETE = 4;
+    static final int T_PREALLOC = 1, T_RECORD = 2, T_APPEND = 3, T_DELETE = 4;
     /** Classifier-only pseudo-op: recid created AND deleted in one transaction; never logged. */
     private static final int T_TRANSIENT = 0;
 
