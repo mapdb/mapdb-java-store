@@ -331,7 +331,10 @@ public class StoreDirect implements StoreDelta {
             throw new DBException.DataCorruption("not a mapdb StoreDirect file (bad magic)");
         int features = vol.getInt(O_FEATURES);
         if (features != 0)
-            throw new DBException("store uses unsupported feature bits: 0x" + Integer.toHexString(features));
+            // An unsupported on-disk header is an unopenable store image, like the other
+            // structural header rejects in this method.
+            throw new DBException.DataCorruption(
+                    "store uses unsupported feature bits: 0x" + Integer.toHexString(features));
         if (vol.getInt(O_HEAD_CHECKSUM) != headChecksum())
             throw new DBException.DataCorruption(
                     "header checksum mismatch: store was not closed cleanly or the header is corrupted");
