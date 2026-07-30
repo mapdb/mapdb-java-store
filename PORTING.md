@@ -64,10 +64,14 @@ and packages still live under `org.mapdb`.
   (and the corresponding set) factories, which stripe a map across several
   independent stores for write scaling, are not ported. This engine exposes
   only the single-store HTreeMap variants.
-- **File locking:** the mapdb3 `fileLockDisable`/`fileLockWait` knobs and their
-  underlying `FileLock` guard are not ported. This engine has no protection
-  against a second OS process opening the same file concurrently — the
-  single-writer invariant is the caller's responsibility.
+- **File locking:** the guard itself IS here — a file-backed store holds a
+  `FileLock` on `<db>.lock` for as long as it is open, so a second opener of the
+  same pathname is refused with a `DBException`. It is exclusive except for a
+  read-only `StoreWAL` open, which takes a shared lock (several readers, no
+  writer) and none at all on a medium where no writer could exist. What is not
+  ported are the mapdb3 knobs around it: `fileLockDisable` (there is no way to
+  turn the lock off) and `fileLockWait` (the lock is always `tryLock`, so a
+  refusal is immediate and never a timed wait).
 - **Unported config knobs:** several DBMaker/StoreDirect switches have no
   equivalent here: `concurrencyScale` (segment count), `fileSyncDisable`,
   `allocateStartSize`/`allocateIncrement`, `volumeDB`, `checksumHeaderBypass`,

@@ -195,10 +195,19 @@ single >2 GiB snapshot section in ~1 s, and reopens from it at ~1.9 GB/s.
 - Sharded hash-map/hash-set makers (mapdb3's `memoryShardedHashMap` /
   `heapShardedHashMap` family, which stripe a map across multiple stores for
   write scaling) are not ported.
-- There is no inter-process file lock: this engine does not stop a second OS
-  process from opening the same file. Enforcing a single writer is the caller's
-  responsibility. See [PORTING.md](PORTING.md) for the full list of unported
-  config knobs.
+- The single-writer guard is an exclusive `FileLock` on `<db>.lock`, held for as
+  long as a file-backed store is open: a second opener — another OS process, or a
+  second handle in this JVM — is refused with a `DBException` instead of silently
+  corrupting the file, and refused immediately (`tryLock`, never a wait). It
+  covers one base pathname whichever engine opened it, so `StoreDirect` and
+  `StoreWAL` exclude each other over the same `<db>`. Its limits: it keys on the
+  PATHNAME, so two spellings of one file (a symlink, a hard link, a bind mount)
+  are two locks and are not protected; every `StoreDirect` open takes it
+  EXCLUSIVELY, including under `readOnly()` — a logical guard over a physically
+  read-write volume — so concurrent readers are excluded too (only a read-only
+  `StoreWAL` open takes a shared lock); and memory-backed stores take no lock,
+  having no file to share. See [PORTING.md](PORTING.md) for the full list of
+  unported config knobs.
 
 ## Status / next steps
 

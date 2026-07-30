@@ -191,7 +191,16 @@ public final class DBMaker {
                     }
                     if (fileDeleteAfterOpen) {
                         // Data lives in the open mapping / OS page cache; drop the on-disk file now.
-                        deleteBackingFiles(file, "fileDeleteAfterOpen");
+                        // A failed delete must not abandon the store it just opened: that store
+                        // holds the exclusive <db>.lock, so leaking it makes every later open of
+                        // the pathname — including the caller's retry — fail as "already open in
+                        // this JVM" with no handle in existence to close.
+                        try {
+                            deleteBackingFiles(file, "fileDeleteAfterOpen");
+                        } catch (RuntimeException | Error e) {
+                            try { store.close(); } catch (RuntimeException | Error ce) { e.addSuppressed(ce); }
+                            throw e;
+                        }
                     }
                     if (fileDeleteAfterClose) {
                         final File f = file;

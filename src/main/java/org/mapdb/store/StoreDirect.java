@@ -6,6 +6,11 @@ import org.mapdb.io.DataOutput2;
 import org.mapdb.ser.Serializer;
 
 import java.io.File;
+import java.io.IOException;
+import java.nio.channels.FileChannel;
+import java.nio.channels.FileLock;
+import java.nio.channels.OverlappingFileLockException;
+import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -150,6 +155,17 @@ public class StoreDirect implements StoreDelta {
     /** Set once by close (under {@code synchronized(this)}); refuses any later start/attach so no thread leaks. */
     private boolean maintenanceShutdown;
 
+    // ---------- inter-process open lock (file mode only) ----------
+    /**
+     * {@code <db>.lock} channel and the exclusive {@link FileLock} held on it for the whole life
+     * of a file-backed store; both null in memory mode, which has no pathname to contend on.
+     * Not volatile: written by the constructor before the instance is published, and by
+     * {@link #close()} under {@code commitLock} exclusive — the same barrier every operation
+     * already passes through.
+     */
+    private FileChannel lockCh;
+    private FileLock lock;
+
     private static final class CompactEntry {
         final long recid;
         final boolean prealloc;
@@ -182,13 +198,24 @@ public class StoreDirect implements StoreDelta {
     public StoreDirect(File file) { this(file, true); }
 
     public StoreDirect(File file, boolean threadSafe) {
-        this.vol = new ByteBufferVol(file);
-        this.threadSafe = threadSafe;
-        this.asserts = new DeadlockAsserts();
-        this.structuralLock = asserts.structural(threadSafe ? new ReentrantLock() : Locks.NO_OP_LOCK);
-        this.commitLock = threadSafe ? new java.util.concurrent.locks.ReentrantReadWriteLock() : Locks.NO_OP_RW_LOCK;
-        this.segs = new SegmentLocks(SegmentLocks.DEFAULT_COUNT, threadSafe, asserts);
+        // BEFORE the volume: opening it with CREATE already materializes the file, and
+        // initCreate() stamps a header into it. The loser of a race must not have touched the
+        // winner's bytes, so the lock is taken first and the volume opened only once it is held.
+        takeStoreLock(file);
+        // One guard over EVERYTHING after the lock, including the lock/segment allocations: an
+        // OutOfMemoryError between the volume open and initOpen would otherwise leak both the
+        // mapping and the lock. `v` mirrors the final field so the cleanup can reach the volume
+        // even when the throw happened before the field was assigned.
+        ByteBufferVol v = null;
+        boolean ok = false;
         try {
+            v = new ByteBufferVol(file);
+            this.vol = v;
+            this.threadSafe = threadSafe;
+            this.asserts = new DeadlockAsserts();
+            this.structuralLock = asserts.structural(threadSafe ? new ReentrantLock() : Locks.NO_OP_LOCK);
+            this.commitLock = threadSafe ? new java.util.concurrent.locks.ReentrantReadWriteLock() : Locks.NO_OP_RW_LOCK;
+            this.segs = new SegmentLocks(SegmentLocks.DEFAULT_COUNT, threadSafe, asserts);
             long length = vol.length();
             if (length == 0) {
                 initCreate();
@@ -198,12 +225,81 @@ public class StoreDirect implements StoreDelta {
                 vol.ensureAvailable(PAGE_SIZE);
                 initOpen();
             }
-        } catch (RuntimeException e) {
-            try {
-                vol.close();
-            } catch (RuntimeException ignore) { /* surface the original failure */ }
-            throw e;
+            ok = true;
+        } finally {
+            if (!ok) {
+                // A throwing constructor produces no reference, so nothing can ever call close():
+                // whatever was acquired has to be given back here or the lock is held until the
+                // JVM exits. Bad magic / checksum mismatch is a NORMAL outcome (a crashed store),
+                // and it must not poison the pathname for the repair attempt that follows.
+                if (v != null) {
+                    try {
+                        v.close();
+                    } catch (RuntimeException | Error ignore) { /* surface the original failure */ }
+                }
+                releaseStoreLock();
+            }
         }
+    }
+
+    /**
+     * Exclusive {@code <db>.lock}, the same convention and pathname {@code WalSegmentSet} uses:
+     * one store per base pathname, whichever engine opened it. StoreWAL's inner
+     * {@link StoreDirect} is memory-backed, so a WAL store takes this lock exactly once (in
+     * {@code WalSegmentSet}) and never contends with itself.
+     *
+     * <p>{@code tryLock}, never {@code lock}: a second opener is a configuration error, and
+     * blocking on it would look like a hang with no diagnostic. Every StoreDirect file open is
+     * physically read-write ({@link ByteBufferVol} maps READ_WRITE and {@link #initCreate()}
+     * writes a header), including the one under {@code DBMaker.readOnly()}, whose
+     * {@code StoreReadOnlyWrapper} rejects mutations at the API only — so the lock is always
+     * exclusive and no shared-lock mode exists to ask for.
+     *
+     * <p>The lock file is created on demand and NEVER deleted: unlinking it while another
+     * process holds the lock would let a third open create a fresh inode and lock that instead,
+     * so two writers would both believe they were alone. It is a zero-byte marker; only
+     * {@code DBMaker}'s explicit {@code fileDeleteAfterOpen/Close} removes it, together with
+     * the store it is deleting.
+     */
+    private void takeStoreLock(File file) {
+        File lockFile = new File(file.getAbsoluteFile().getPath() + ".lock");
+        try {
+            lockCh = FileChannel.open(lockFile.toPath(), StandardOpenOption.CREATE,
+                    StandardOpenOption.READ, StandardOpenOption.WRITE);
+        } catch (IOException e) {
+            throw new DBException("cannot open the store lock file " + lockFile, e);
+        }
+        try {
+            lock = lockCh.tryLock(0, Long.MAX_VALUE, false);
+        } catch (OverlappingFileLockException e) {
+            // same JVM, another store instance over this pathname: FileLock is per-JVM-wide, so
+            // tryLock throws instead of returning null. Same refusal, a different exception.
+            releaseStoreLock();
+            throw new DBException("store " + file + " is already open in this JVM", e);
+        } catch (IOException e) {
+            releaseStoreLock();
+            throw new DBException("cannot take the store lock on " + lockFile, e);
+        }
+        if (lock == null) {
+            releaseStoreLock();
+            throw new DBException("store " + file + " is locked by another process");
+        }
+    }
+
+    /** Idempotent: releases the open lock and closes its channel, best-effort, in that order. */
+    private void releaseStoreLock() {
+        try {
+            if (lock != null) lock.release();
+        } catch (IOException | RuntimeException | Error ignored) {
+            // Closing the channel below drops the lock anyway, so it must run even if the
+            // explicit release blew up. Error included: swallowing one is the lesser evil next to
+            // leaving the pathname locked for the rest of the JVM's life.
+        }
+        try {
+            if (lockCh != null) lockCh.close();
+        } catch (IOException | RuntimeException | Error ignored) { /* nothing left to salvage */ }
+        lock = null;
+        lockCh = null;
     }
 
     @Override public boolean isThreadSafe() { return threadSafe; }
@@ -1993,12 +2089,31 @@ public class StoreDirect implements StoreDelta {
             boolean stamp = !poisoned; // a poisoned store must never be resealed as clean
             closed = true;
             poisoned = false; // resources released below; further close() calls no-op
-            if (stamp) {
-                long tail = fileTail();
-                stampHeaderDurable();
-                vol.close(tail);
-            } else {
-                vol.close(-1); // release channel/mappings, no truncate, no stamp
+            boolean volClosed = false;
+            try {
+                if (stamp) {
+                    long tail = fileTail();
+                    stampHeaderDurable();
+                    vol.close(tail);
+                } else {
+                    vol.close(-1); // release channel/mappings, no truncate, no stamp
+                }
+                volClosed = true;
+            } finally {
+                // A failed stamp (full disk, dead device) skipped vol.close entirely. Drop the
+                // slices and close the channel anyway, BEFORE the lock: admitting the next opener
+                // while this one still holds the file open is the one ordering worth avoiding.
+                // (The mappings themselves are unmapped by the GC, as everywhere else here.)
+                if (!volClosed) {
+                    try {
+                        vol.close(-1);
+                    } catch (RuntimeException | Error ignore) { /* surface the original failure */ }
+                }
+                // Unconditional: a failed stamp or truncate leaves the store closed either way,
+                // and holding the pathname hostage on top of it would block the reopen that
+                // repairs it. Released while still holding commitLock exclusive, so no operation
+                // can be mid-volume-access.
+                releaseStoreLock();
             }
             indexPages = new long[0];
         } finally {
