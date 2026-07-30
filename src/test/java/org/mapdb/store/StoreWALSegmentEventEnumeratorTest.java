@@ -153,7 +153,7 @@ public class StoreWALSegmentEventEnumeratorTest {
 
     @Test public void every_segment_crash_image_of_every_short_history_recovers_as_Q5_says()
             throws IOException {
-        int depth = Integer.getInteger("mapdb5.segenum.depth", DEFAULT_DEPTH);
+        int depth = Integer.getInteger("mapdb.segenum.depth", DEFAULT_DEPTH);
         long t0 = System.nanoTime();
         explore(new ArrayList<>(), depth);
         long ms = (System.nanoTime() - t0) / 1_000_000;
@@ -818,7 +818,7 @@ public class StoreWALSegmentEventEnumeratorTest {
     }
 
     private File newFile() throws IOException {
-        File f = Files.createTempFile("mapdb5-segenum", ".wal").toFile();
+        File f = Files.createTempFile("mapdb-segenum", ".wal").toFile();
         f.delete();
         files.add(f);
         return f;

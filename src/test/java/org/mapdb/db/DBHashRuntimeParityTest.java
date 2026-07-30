@@ -103,7 +103,7 @@ public class DBHashRuntimeParityTest {
     }
 
     @Test public void hashCounterPersistsAndTracksViewMutations() throws Exception {
-        File file = File.createTempFile("mapdb5-hash-counter", ".db");
+        File file = File.createTempFile("mapdb-hash-counter", ".db");
         file.delete();
         try {
             DB db = DBMaker.fileDB(file).transactionEnable().make();
@@ -133,7 +133,7 @@ public class DBHashRuntimeParityTest {
     }
 
     @Test public void hashSetCounterPersistsAndTracksIteratorMutations() throws Exception {
-        File file = File.createTempFile("mapdb5-hash-set-counter", ".db");
+        File file = File.createTempFile("mapdb-hash-set-counter", ".db");
         file.delete();
         try {
             DB db = DBMaker.fileDB(file).transactionEnable().make();

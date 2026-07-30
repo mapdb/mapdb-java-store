@@ -46,7 +46,7 @@ public class DBExistingEnginesTest {
     }
 
     @Test public void bufferTreeMapPersistsAndOpensReadOnly() throws Exception {
-        File file = File.createTempFile("mapdb5-buffer-db", ".db");
+        File file = File.createTempFile("mapdb-buffer-db", ".db");
         file.delete();
         try {
             DB db = DBMaker.fileDB(file).make();
@@ -95,7 +95,7 @@ public class DBExistingEnginesTest {
     }
 
     @Test public void hashMap48PersistsWithBuiltinHasherAndUntypedDispatch() throws Exception {
-        File file = File.createTempFile("mapdb5-hash48-db", ".db");
+        File file = File.createTempFile("mapdb-hash48-db", ".db");
         file.delete();
         try {
             DB db = DBMaker.fileDB(file).transactionEnable().make();

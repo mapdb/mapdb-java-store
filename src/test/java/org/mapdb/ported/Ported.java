@@ -9,7 +9,7 @@ import java.util.Arrays;
 import java.util.Random;
 
 /**
- * Shared helpers for the ported historical-test suites (mapdb1/2/3 → mapdb5).
+ * Shared helpers for the ported historical-test suites (mapdb1/2/3 → mapdb-java-store).
  * Public-API only.
  */
 final class Ported {
@@ -17,7 +17,7 @@ final class Ported {
     private Ported() {}
 
     /**
-     * Largest plain-record content mapdb5 StoreDirect accepts: IndexVal.MAX_CAPACITY - 4.
+     * Largest plain-record content StoreDirect accepts: IndexVal.MAX_CAPACITY - 4.
      * MAX_CAPACITY = 0xFFFD * 16 (~1 MiB-48); minus the 4-byte used-length header.
      */
     static final int MAX_CONTENT = 0xFFFD * 16 - 4; // 1_048_524

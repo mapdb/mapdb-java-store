@@ -111,7 +111,7 @@ public class SerializerParityTest {
     }
 
     @Test public void registeredSerializersReopenThroughUntypedCatalog() throws Exception {
-        File file = File.createTempFile("mapdb5-serializer-parity", ".db");
+        File file = File.createTempFile("mapdb-serializer-parity", ".db");
         file.delete();
         try {
             DB db = DBMaker.fileDB(file).transactionEnable().make();

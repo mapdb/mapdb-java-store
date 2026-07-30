@@ -10,7 +10,7 @@
     <packaging>jar</packaging>
 
     <name>mapdb-java-store</name>
-    <description>MapDB5 storage engine: a push-down record store with write-ahead
+    <description>mapdb-java-store: a push-down record store with write-ahead
 logging and crash recovery, plus a B+tree map and the collection serializers built
 on it. Reference implementation for the Rust and Zig ports.</description>
 

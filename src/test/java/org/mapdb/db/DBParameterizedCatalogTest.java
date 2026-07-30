@@ -28,7 +28,7 @@ public class DBParameterizedCatalogTest {
     }
 
     @Test public void parameterizedCodecsReopenWithoutResupply() throws Exception {
-        File file = File.createTempFile("mapdb5-parameterized", ".db");
+        File file = File.createTempFile("mapdb-parameterized", ".db");
         file.delete();
         try {
             DB db = DBMaker.fileDB(file).transactionEnable().make();

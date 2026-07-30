@@ -15,7 +15,7 @@ public class StoreDirectFileTest extends StoreTCK {
 
     @Override protected Store createStore() {
         try {
-            File f = Files.createTempFile("mapdb5-direct", ".db").toFile();
+            File f = Files.createTempFile("mapdb-direct", ".db").toFile();
             f.delete();
             files.add(f);
             return new StoreDirect(f);

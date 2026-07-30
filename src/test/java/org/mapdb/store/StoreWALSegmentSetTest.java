@@ -40,7 +40,7 @@ public class StoreWALSegmentSetTest {
 
     private File newFile(String tag) {
         try {
-            File f = Files.createTempFile("mapdb5-wal-seg-" + tag, ".wal").toFile();
+            File f = Files.createTempFile("mapdb-wal-seg-" + tag, ".wal").toFile();
             f.delete();
             files.add(f);
             return f;

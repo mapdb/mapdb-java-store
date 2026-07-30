@@ -1,9 +1,9 @@
-# MapDB 1/2/3 → mapdb5 porting status
+# MapDB 1/2/3 → mapdb-java-store porting status
 
-Mapdb5 is a Store4 implementation, not an on-disk-format upgrade of MapDB 1–3.
-Old database files are not opened directly; copy data through the public
-collection APIs. API names are retained where they remain meaningful, but
-mapdb5 packages live under `org.mapdb`.
+mapdb-java-store is a new store architecture, not an on-disk-format upgrade of
+MapDB 1–3. Old database files are not opened directly; copy data through the
+public collection APIs. API names are retained where they remain meaningful,
+and packages still live under `org.mapdb`.
 
 ## Ported
 
@@ -37,8 +37,8 @@ mapdb5 packages live under `org.mapdb`.
 - **Expiry clocks:** HTreeCache persists one TTL policy, either writes
   (create/update) or accesses. MapDB 3 allowed independent create, update, and
   get queues. Combining different clocks requires a new multi-queue entry format.
-- **Index collapse switch:** directory removal currently always uses mapdb5's
-  collapse behavior; `removeCollapsesIndexTreeDisable()` is not exposed.
+- **Index collapse switch:** directory removal currently always uses this
+  engine's collapse behavior; `removeCollapsesIndexTreeDisable()` is not exposed.
 - **External BTree pump:** external-value trees support live operations and
   reopen, but `createFrom`/streaming sink currently reject that mode.
 - **Transactions/snapshots:** StoreWAL supplies commit/rollback and crash
@@ -62,14 +62,14 @@ mapdb5 packages live under `org.mapdb`.
   are not cross-process signals.
 - **Sharded hash makers:** the mapdb3 `memoryShardedHashMap`/`heapShardedHashMap`
   (and the corresponding set) factories, which stripe a map across several
-  independent stores for write scaling, are not ported. mapdb5 exposes only the
-  single-store HTreeMap variants.
+  independent stores for write scaling, are not ported. This engine exposes
+  only the single-store HTreeMap variants.
 - **File locking:** the mapdb3 `fileLockDisable`/`fileLockWait` knobs and their
-  underlying `FileLock` guard are not ported. mapdb5 has no protection against a
-  second OS process opening the same file concurrently — the single-writer
-  invariant is the caller's responsibility.
-- **Unported config knobs:** several DBMaker/StoreDirect switches have no mapdb5
-  equivalent: `concurrencyScale` (segment count), `fileSyncDisable`,
+  underlying `FileLock` guard are not ported. This engine has no protection
+  against a second OS process opening the same file concurrently — the
+  single-writer invariant is the caller's responsibility.
+- **Unported config knobs:** several DBMaker/StoreDirect switches have no
+  equivalent here: `concurrencyScale` (segment count), `fileSyncDisable`,
   `allocateStartSize`/`allocateIncrement`, `volumeDB`, `checksumHeaderBypass`,
   and `fileMmapPreclearDisable`.
 

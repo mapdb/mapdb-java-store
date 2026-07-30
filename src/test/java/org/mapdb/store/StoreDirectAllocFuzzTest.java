@@ -54,7 +54,7 @@ public class StoreDirectAllocFuzzTest {
     @Test public void alloc_fuzz_with_reopen() throws IOException {
         long seed = Long.getLong("fuzz.seed", 0xA110CA7EL);
         System.out.println("StoreDirectAllocFuzzTest seed=" + Long.toHexString(seed) + " ops=" + OPS);
-        File f = Files.createTempFile("mapdb5-allocfuzz", ".db").toFile();
+        File f = Files.createTempFile("mapdb-allocfuzz", ".db").toFile();
         f.delete();
         files.add(f);
 

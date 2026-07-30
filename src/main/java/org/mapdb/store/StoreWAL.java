@@ -31,7 +31,7 @@ import java.util.zip.CRC32;
  * <pre>
  * name    := &lt;db&gt; ".wal." &lt;16 lowercase hex digits of segmentSeq&gt;   // first segment is 1
  * segment := segmentHeader(36) section*
- * segmentHeader := magic "MDB5.WAL"(8) | version int32 = 3 | flags int32 = 0
+ * segmentHeader := magic "MDBS.WAL"(8) | version int32 = 3 | flags int32 = 0
  *                | segmentSeq int64 | firstLsn int64 | headerCrc int32
  * section := tag byte ('S' commit, 'C' cleaner/checkpoint image, 'K' clean mark)
  *          | lsn int64 (exactly consecutive across the retained set)

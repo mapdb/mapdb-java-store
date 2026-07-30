@@ -30,7 +30,7 @@ public class StoreWALFormatV2Test {
 
     private File newFile(String tag) {
         try {
-            File f = Files.createTempFile("mapdb5-wal-fmt-" + tag, ".wal").toFile();
+            File f = Files.createTempFile("mapdb-wal-fmt-" + tag, ".wal").toFile();
             f.delete();
             files.add(f);
             return f;
@@ -67,7 +67,7 @@ public class StoreWALFormatV2Test {
                 WalTestKit.segment(f, 1).getName(), seg.getName());
         byte[] head = WalTestKit.read(seg);
         assertTrue(head.length >= WalTestKit.SEG_HDR);
-        assertArrayEquals(new byte[]{'M', 'D', 'B', '5', '.', 'W', 'A', 'L'},
+        assertArrayEquals(new byte[]{'M', 'D', 'B', 'S', '.', 'W', 'A', 'L'},
                 java.util.Arrays.copyOf(head, 8));
         assertEquals("format version", 3, ByteBuffer.wrap(head).getInt(8));
         assertEquals("flags", 0, ByteBuffer.wrap(head).getInt(12));

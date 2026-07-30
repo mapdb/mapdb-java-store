@@ -41,7 +41,7 @@ public class WalWriteAmplificationTest {
 
     private File newFile(String tag) {
         try {
-            File f = Files.createTempFile("mapdb5-wamp-" + tag, ".wal").toFile();
+            File f = Files.createTempFile("mapdb-wamp-" + tag, ".wal").toFile();
             f.delete();
             files.add(f);
             return f;

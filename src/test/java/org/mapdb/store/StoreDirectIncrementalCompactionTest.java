@@ -30,7 +30,7 @@ public class StoreDirectIncrementalCompactionTest {
     private final List<File> files = new ArrayList<>();
 
     private File newFile() throws IOException {
-        File f = Files.createTempFile("mapdb5-incr-compact", ".db").toFile();
+        File f = Files.createTempFile("mapdb-incr-compact", ".db").toFile();
         f.delete();
         files.add(f);
         return f;

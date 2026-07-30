@@ -59,7 +59,7 @@ public final class MaintenanceExecutor {
     public MaintenanceExecutor(String name, long tickNanos, MaintenanceBudget budget) {
         this.tickNanos = tickNanos;
         this.budget = budget;
-        this.thread = new Thread(this::loop, "mapdb5-maint-" + name);
+        this.thread = new Thread(this::loop, "mapdb-maint-" + name);
         this.thread.setDaemon(true);
         this.thread.start();
     }

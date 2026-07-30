@@ -22,7 +22,7 @@ public class StoreDirectCompactionTest {
     private final List<File> files = new ArrayList<>();
 
     private File newFile() throws IOException {
-        File f = Files.createTempFile("mapdb5-compact", ".db").toFile();
+        File f = Files.createTempFile("mapdb-compact", ".db").toFile();
         f.delete();
         files.add(f);
         return f;

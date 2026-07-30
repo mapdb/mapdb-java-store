@@ -1,5 +1,5 @@
 /**
- * Root package of the MapDB5 / Store4 prototype.
+ * Root package of the mapdb-java-store engine.
  *
  * <p>Provides the shared {@link org.mapdb.DBException} hierarchy whose concrete
  * subtypes are part of the Store TCK contract. Collection and storage

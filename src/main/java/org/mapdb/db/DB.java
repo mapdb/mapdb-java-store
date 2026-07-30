@@ -142,7 +142,7 @@ public class DB implements Closeable {
                 catalogLoadInternal();
             } catch (DBException.GetVoid e) {
                 throw new DBException.WrongConfiguration(
-                        "not a mapdb5 DB store: recid " + RECID_CATALOG + " is not present", e);
+                        "not a mapdb DB store: recid " + RECID_CATALOG + " is not present", e);
             } catch (DBException.DataCorruption e) {
                 throw e; // already a clean catalog-format error
             } catch (DBException e) {
@@ -184,7 +184,7 @@ public class DB implements Closeable {
             int magic = in.readInt();
             if (magic != CATALOG_MAGIC) {
                 throw new DBException.DataCorruption(
-                        "not a mapdb5 catalog: bad magic 0x" + Integer.toHexString(magic));
+                        "not a mapdb catalog: bad magic 0x" + Integer.toHexString(magic));
             }
             int version = in.readInt();
             if (version != CATALOG_VERSION) {
@@ -227,7 +227,7 @@ public class DB implements Closeable {
     }
 
     /**
-     * Reads a packed long (mapdb5 varint: 7 bits/byte, high bit marks the terminal byte)
+     * Reads a packed long (MapDB varint: 7 bits/byte, high bit marks the terminal byte)
      * without reading past {@code end} — a corrupt/unterminated value fails cleanly instead
      * of scanning into adjacent store bytes.
      */
@@ -721,7 +721,7 @@ public class DB implements Closeable {
     /**
      * Unlinks {@code name} from the catalog and best-effort frees its records.
      *
-     * <p><b>Limitation:</b> mapdb5 collections have no {@code destroy()} primitive.
+     * <p><b>Limitation:</b> mapdb collections have no {@code destroy()} primitive.
      * For maps/sets/lists this calls {@code clear()} (freeing entry records) but the
      * structural root/directory records are <em>leaked</em> until the store is
      * compacted or discarded. Atomic records are freed exactly. A collection created
@@ -956,9 +956,9 @@ public class DB implements Closeable {
      * {@link #hasher} (e.g. {@code Hashers.mixing(Arrays::hashCode)}). A custom hasher must be
      * re-supplied identically on every {@code open}.
      *
-     * <h3>mapdb5 vs mapdb3 divergences</h3>
+     * <h3>Divergences from mapdb3</h3>
      * <ul>
-     *   <li><b>Single write-TTL.</b> mapdb5's cache has one TTL plus one access-order flag. A
+     *   <li><b>Single write-TTL.</b> This engine's cache has one TTL plus one access-order flag. A
      *       write-TTL ({@link #expireAfterCreate}/{@link #expireAfterUpdate}) and an access-TTL
      *       ({@link #expireAfterGet}) are mutually exclusive; {@code expireAfterCreate} and
      *       {@code expireAfterUpdate} may both be set only if equal.</li>
@@ -1044,7 +1044,7 @@ public class DB implements Closeable {
             this.expireStoreSize = requireNonNegative(storeSizeBytes, "expireStoreSize"); return this;
         }
         /** Cap the entries a single foreground operation will sweep-evict ({@code 0} = unbounded).
-         *  Advanced mapdb5 throttle; only meaningful for an expiring cache. */
+         *  Advanced knob specific to this engine; only meaningful for an expiring cache. */
         public HashMapMaker<K, V> expireMaxEvictPerOp(long n) {
             this.expireMaxEvictPerOp = requireNonNegative(n, "expireMaxEvictPerOp"); return this;
         }
@@ -1100,7 +1100,7 @@ public class DB implements Closeable {
             if (expireCreateTtl > 0 && expireUpdateTtl > 0) {
                 if (expireCreateTtl != expireUpdateTtl) {
                     throw new DBException.WrongConfiguration("hashMap " + name
-                            + ": mapdb5 uses a single write-TTL; expireAfterCreate and expireAfterUpdate must be equal");
+                            + ": mapdb uses a single write-TTL; expireAfterCreate and expireAfterUpdate must be equal");
                 }
                 writeTtl = expireCreateTtl;
             } else if (expireCreateTtl > 0) {
@@ -1114,7 +1114,7 @@ public class DB implements Closeable {
             boolean anyExpiry = writeTtl > 0 || getTtl > 0 || expireMaxSize > 0 || expireStoreSize > 0;
             if (writeTtl > 0 && getTtl > 0) {
                 throw new DBException.WrongConfiguration("hashMap " + name
-                        + ": mapdb5 HTreeCache supports a single TTL; cannot combine a write-TTL"
+                        + ": mapdb HTreeCache supports a single TTL; cannot combine a write-TTL"
                         + " (expireAfterCreate/expireAfterUpdate) with an access-TTL (expireAfterGet)");
             }
             if (!valueInline && anyExpiry) {
@@ -1697,7 +1697,7 @@ public class DB implements Closeable {
             boolean anyExpiry = writeTtl > 0 || getTtl > 0 || expireMaxSize > 0 || expireStoreSize > 0;
             if (writeTtl > 0 && getTtl > 0) {
                 throw new DBException.WrongConfiguration("hashSet " + name
-                        + ": mapdb5 HTreeCache supports a single TTL; cannot combine expireAfterCreate with expireAfterGet");
+                        + ": mapdb HTreeCache supports a single TTL; cannot combine expireAfterCreate with expireAfterGet");
             }
             if (expireMaxEvictPerOp > 0 && !anyExpiry) {
                 throw new DBException.WrongConfiguration("hashSet " + name
@@ -2120,7 +2120,7 @@ public class DB implements Closeable {
         return new BufferTreeMapMaker<>(name, keyFmt, valueFmt);
     }
 
-    /** Maker for MapDB5's write-optimized buffered B-tree. */
+    /** Maker for the write-optimized buffered B-tree. */
     public final class BufferTreeMapMaker<K, V> extends Maker<BufferTreeMap<K, V>> {
         private GroupFormat<K> keyFmt;
         private GroupFormat<V> valueFmt;

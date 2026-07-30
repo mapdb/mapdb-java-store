@@ -22,7 +22,7 @@ import static org.junit.Assert.fail;
  * payloads, the 4-byte CRC) must decode correctly when split across window refills,
  * and torn tails must truncate to the newest surviving commit regardless of where the
  * cut lands relative to a window edge. Adapts mapdb3's {@code WALTruncate} /
- * {@code cut_broken_end} invariants to mapdb5 framing.
+ * {@code cut_broken_end} invariants to this engine's WAL framing.
  */
 public class StoreWALStreamReplayTest {
 
@@ -30,7 +30,7 @@ public class StoreWALStreamReplayTest {
 
     private File newFile(String tag) {
         try {
-            File f = Files.createTempFile("mapdb5-wal-stream-" + tag, ".wal").toFile();
+            File f = Files.createTempFile("mapdb-wal-stream-" + tag, ".wal").toFile();
             f.delete();
             files.add(f);
             return f;

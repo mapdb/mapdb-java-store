@@ -65,7 +65,7 @@ import static org.junit.Assert.fail;
  *
  * <p><b>The CI gate is depth {@value #DEFAULT_DEPTH}</b>, which is what a plain
  * {@code mvn test} runs. Depth 5 — the bound §4.2 names, ~37k histories and ~60s — is a manual
- * invocation: {@code -Dmapdb5.enum.depth=5}. The count of histories actually checked is
+ * invocation: {@code -Dmapdb.enum.depth=5}. The count of histories actually checked is
  * printed, because a silently truncated sweep reads exactly like a complete one.
  */
 public class StoreWALSmallModelEnumeratorTest {
@@ -125,7 +125,7 @@ public class StoreWALSmallModelEnumeratorTest {
     // ---------------------------------------------------------------- the sweep
 
     @Test public void every_short_history_recovers_to_the_oracle_state() throws IOException {
-        int depth = Integer.getInteger("mapdb5.enum.depth", DEFAULT_DEPTH);
+        int depth = Integer.getInteger("mapdb.enum.depth", DEFAULT_DEPTH);
         long t0 = System.nanoTime();
         explore(new ArrayList<>(), depth);
         long ms = (System.nanoTime() - t0) / 1_000_000;
@@ -344,7 +344,7 @@ public class StoreWALSmallModelEnumeratorTest {
     }
 
     private File newFile() throws IOException {
-        File f = Files.createTempFile("mapdb5-wal-enum", ".wal").toFile();
+        File f = Files.createTempFile("mapdb-wal-enum", ".wal").toFile();
         f.delete();
         files.add(f);
         return f;

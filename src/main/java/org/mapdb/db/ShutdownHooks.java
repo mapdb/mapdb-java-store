@@ -62,7 +62,7 @@ final class ShutdownHooks {
 
     private static void installHookOnce() {
         if (HOOK_INSTALLED.compareAndSet(false, true)) {
-            Runtime.getRuntime().addShutdownHook(new Thread(ShutdownHooks::closeAll, "mapdb5-db-shutdown"));
+            Runtime.getRuntime().addShutdownHook(new Thread(ShutdownHooks::closeAll, "mapdb-db-shutdown"));
         }
     }
 

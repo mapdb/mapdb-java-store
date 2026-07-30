@@ -28,7 +28,7 @@ public class DeadlockAssertsTest {
 
     private static Store walStore() {
         try {
-            File f = Files.createTempFile("mapdb5-deadlock", ".wal").toFile();
+            File f = Files.createTempFile("mapdb-deadlock", ".wal").toFile();
             f.delete();
             f.deleteOnExit();
             return new StoreWAL(f);

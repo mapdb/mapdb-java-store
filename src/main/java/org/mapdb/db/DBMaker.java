@@ -38,8 +38,8 @@ import org.mapdb.store.StoreWAL;
  * </ul>
  *
  * <p>Some MapDB 3 options are accepted for source compatibility but are no-ops here:
- * {@link Maker#fileMmapEnable()} / {@link Maker#fileMmapEnableIfSupported()} (mapdb5 file
- * stores are always memory-mapped). Others that mapdb5's stores cannot honor
+ * {@link Maker#fileMmapEnable()} / {@link Maker#fileMmapEnableIfSupported()} (file stores here
+ * are always memory-mapped). Others that this engine's stores cannot honor
  * (allocateStartSize, checksum bypass) remain intentionally omitted rather than silently
  * ignored.
  */
@@ -62,7 +62,7 @@ public final class DBMaker {
     /** A fileDB on a fresh temp file that is deleted when the DB closes. */
     public static Maker tempFileDB() {
         try {
-            File f = File.createTempFile("mapdb5", ".db");
+            File f = File.createTempFile("mapdb", ".db");
             f.delete(); // we want the store to create it fresh
             return fileDB(f).fileDeleteAfterClose();
         } catch (IOException e) {
@@ -96,7 +96,7 @@ public final class DBMaker {
         /** @deprecated MapDB 3 alias for {@link #fileDeleteAfterClose()}. */
         @Deprecated public Maker deleteFilesAfterClose() { return fileDeleteAfterClose(); }
 
-        /** MapDB 3 compatibility hook; background work is configured per collection in mapdb5. */
+        /** MapDB 3 compatibility hook; background work is configured per collection here. */
         public Maker executorEnable() { return this; }
 
         /**
@@ -121,22 +121,22 @@ public final class DBMaker {
         /**
          * Open the store as logically read-only: the DB rejects all mutations at the API by
          * wrapping the store in {@link StoreReadOnlyWrapper}. Intended for opening an existing,
-         * non-empty DB. This is a logical guard only — mapdb5 file stores still {@code mmap} the
+         * non-empty DB. This is a logical guard only — file stores still {@code mmap} the
          * file {@code READ_WRITE} at the OS level (see {@link StoreReadOnlyWrapper}). Cannot be
          * combined with {@link #transactionEnable()} (a read-only DB has nothing to commit).
          */
         public Maker readOnly() { this.readOnly = true; return this; }
 
-        /** No-op; mapdb5 file stores are always memory-mapped. Present for MapDB 3 source compatibility. */
+        /** No-op; file stores are always memory-mapped. Present for MapDB 3 source compatibility. */
         public Maker fileMmapEnable() { return this; }
 
-        /** No-op; mapdb5 file stores are always memory-mapped. Present for MapDB 3 source compatibility. */
+        /** No-op; file stores are always memory-mapped. Present for MapDB 3 source compatibility. */
         public Maker fileMmapEnableIfSupported() { return this; }
 
-        /** Mapdb5 file stores already unmap/clean their buffers on close. */
+        /** File stores already unmap/clean their buffers on close. */
         public Maker cleanerHackEnable() { return this; }
 
-        /** Mapdb5 always uses its mmap implementation for file DBs; retained for source compatibility. */
+        /** File DBs always use the mmap implementation; retained for source compatibility. */
         public Maker fileChannelEnable() { return this; }
 
         /** StoreDirect/WAL checksums are inherent rather than optional. */

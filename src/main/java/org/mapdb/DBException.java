@@ -1,6 +1,6 @@
 package org.mapdb;
 
-/** Runtime exceptions thrown by mapdb5. Types are part of the Store TCK contract. */
+/** Runtime exceptions thrown by this engine. Types are part of the Store TCK contract. */
 public class DBException extends RuntimeException {
 
     public DBException(String msg) { super(msg); }

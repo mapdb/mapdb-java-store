@@ -1,6 +1,6 @@
 # mapdb-java-store
 
-The MapDB5 storage engine: a record store where collections push *operations*
+The MapDB store engine: a record store where collections push *operations*
 down into the store instead of pulling deserialized arrays up, eliminating
 intra-node write amplification. This is the **reference implementation**; there
 are separate ports in Rust and Zig.
@@ -195,8 +195,8 @@ single >2 GiB snapshot section in ~1 s, and reopens from it at ~1.9 GB/s.
 - Sharded hash-map/hash-set makers (mapdb3's `memoryShardedHashMap` /
   `heapShardedHashMap` family, which stripe a map across multiple stores for
   write scaling) are not ported.
-- There is no inter-process file lock: mapdb5 does not stop a second OS process
-  from opening the same file. Enforcing a single writer is the caller's
+- There is no inter-process file lock: this engine does not stop a second OS
+  process from opening the same file. Enforcing a single writer is the caller's
   responsibility. See [PORTING.md](PORTING.md) for the full list of unported
   config knobs.
 

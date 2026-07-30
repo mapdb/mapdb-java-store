@@ -56,7 +56,7 @@ public class StoreWALCleanerScanCostTest {
 
     private File newFile() {
         try {
-            File f = Files.createTempFile("mapdb5-wal-scancost", ".wal").toFile();
+            File f = Files.createTempFile("mapdb-wal-scancost", ".wal").toFile();
             f.delete();
             files.add(f);
             return f;

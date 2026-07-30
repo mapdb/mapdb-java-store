@@ -29,7 +29,7 @@ import java.util.zip.CRC32;
  *
  * <pre>
  * name    := &lt;db&gt; ".wal." &lt;16 lowercase hex digits of segmentSeq&gt;
- * header  := magic "MDB5.WAL"(8) | version int32 = 3 | flags int32 = 0
+ * header  := magic "MDBS.WAL"(8) | version int32 = 3 | flags int32 = 0
  *          | segmentSeq int64 | firstLsn int64 | headerCrc int32       // 36 bytes
  * </pre>
  *
@@ -50,7 +50,7 @@ final class WalSegmentSet implements java.io.Closeable {
     static final int SEG_HDR = 36;
     /** Bytes of the segment header covered by {@code headerCrc}. */
     static final int SEG_HDR_CRC_LEN = 32;
-    static final byte[] MAGIC = {'M', 'D', 'B', '5', '.', 'W', 'A', 'L'};
+    static final byte[] MAGIC = {'M', 'D', 'B', 'S', '.', 'W', 'A', 'L'};
     /**
      * v3 adds {@code firstLsn} to the header and a second {@code int64} to the {@code 'K'} body.
      *
@@ -403,7 +403,7 @@ final class WalSegmentSet implements java.io.Closeable {
         int stored = be32(into, SEG_HDR_CRC_LEN);
         if ((int) crc.getValue() != stored) return "segment header CRC mismatch";     // H3
         for (int i = 0; i < MAGIC.length; i++) {
-            if (into[i] != MAGIC[i]) return "not a mapdb5 WAL segment";               // H4
+            if (into[i] != MAGIC[i]) return "not a mapdb WAL segment";                // H4
         }
         int version = be32(into, 8);
         if (version != FORMAT_VERSION) return "!unsupported WAL format version " + version;   // H5

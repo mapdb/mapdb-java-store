@@ -12,7 +12,7 @@ import java.util.Arrays;
  * The delta capability is only exercisable byte-exactly with a size-driven
  * ("no-size") serializer: {@link #RAW} writes its bytes verbatim and
  * deserialize() consumes exactly the {@code size} bytes the store reports
- * (base ++ deltas). mapdb5's {@code Serializers.BYTE_ARRAY}
+ * (base ++ deltas). This engine's {@code Serializers.BYTE_ARRAY}
  * is self-delimiting (length-prefixed) so it hides the appended region — it is
  * the wrong tool for merged-content assertions. RAW is the mapdb3
  * {@code BYTE_ARRAY_NOSIZE} analogue that the delta contract's merged-logical-value

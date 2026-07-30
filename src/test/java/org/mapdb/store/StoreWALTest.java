@@ -14,7 +14,7 @@ public class StoreWALTest extends StoreTCK {
 
     @Override protected Store createStore() {
         try {
-            File f = Files.createTempFile("mapdb5-wal-tck", ".wal").toFile();
+            File f = Files.createTempFile("mapdb-wal-tck", ".wal").toFile();
             f.delete(); // start from a non-existent WAL so each store is empty
             files.add(f);
             return new StoreWAL(f);

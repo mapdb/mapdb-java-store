@@ -28,7 +28,7 @@ public class StoreDirectLinkedTest {
     private final List<File> files = new ArrayList<>();
 
     private File newFile() throws IOException {
-        File f = Files.createTempFile("mapdb5-linked", ".db").toFile();
+        File f = Files.createTempFile("mapdb-linked", ".db").toFile();
         f.delete();
         files.add(f);
         return f;

@@ -46,7 +46,7 @@ public class DBParityUtilitiesTest {
     }
 
     @Test public void dbStreamingSinkPersistsCounterAndListeners() throws Exception {
-        File file = File.createTempFile("mapdb5-tree-sink", ".db");
+        File file = File.createTempFile("mapdb-tree-sink", ".db");
         file.delete();
         try {
             List<String> events = new ArrayList<>();

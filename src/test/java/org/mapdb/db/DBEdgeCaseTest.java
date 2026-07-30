@@ -43,7 +43,7 @@ public class DBEdgeCaseTest {
 
     /** Allocates a fresh (non-existent) temp file path plus its WAL checkpoint sidecar. */
     private static File freshFile() throws Exception {
-        File f = File.createTempFile("mapdb5edge", ".db");
+        File f = File.createTempFile("mapdb-edge", ".db");
         f.delete();
         return f;
     }

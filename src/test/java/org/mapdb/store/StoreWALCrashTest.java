@@ -32,7 +32,7 @@ public class StoreWALCrashTest {
 
     private File newFile(String tag) {
         try {
-            File f = Files.createTempFile("mapdb5-wal-crash-" + tag, ".wal").toFile();
+            File f = Files.createTempFile("mapdb-wal-crash-" + tag, ".wal").toFile();
             f.delete();
             files.add(f);
             return f;

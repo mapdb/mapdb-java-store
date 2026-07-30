@@ -33,7 +33,7 @@ public class StoreWALWriterReplayAgreementTest {
 
     private File newFile(String tag) {
         try {
-            File f = Files.createTempFile("mapdb5-wal-agree-" + tag, ".wal").toFile();
+            File f = Files.createTempFile("mapdb-wal-agree-" + tag, ".wal").toFile();
             f.delete();
             files.add(f);
             return f;
@@ -147,7 +147,7 @@ public class StoreWALWriterReplayAgreementTest {
         File f = newFile("short-high");
         byte[] a = Fixtures.payload(1, 1, 8);
         writeLog(f, section('S', 1, recordEntry(1, cap(a.length), a)));
-        WalTestKit.write(WalTestKit.segment(f, 2), new byte[]{'M', 'D', 'B', '5', '.'});
+        WalTestKit.write(WalTestKit.segment(f, 2), new byte[]{'M', 'D', 'B', 'S', '.'});
         StoreWAL s = new StoreWAL(f);
         try {
             assertArrayEquals(a, s.get(1, Fixtures.RAW));
@@ -161,7 +161,7 @@ public class StoreWALWriterReplayAgreementTest {
         writeLog(g, section('S', 1, recordEntry(1, cap(a.length), a)));
         // move the real segment up to 2 and leave a short one at 1
         WalTestKit.write(WalTestKit.segment(g, 2), rehomed(WalTestKit.read(WalTestKit.segment(g, 1)), 2));
-        WalTestKit.write(WalTestKit.segment(g, 1), new byte[]{'M', 'D', 'B', '5', '.'});
+        WalTestKit.write(WalTestKit.segment(g, 1), new byte[]{'M', 'D', 'B', 'S', '.'});
         try {
             new StoreWAL(g).close();
             fail("expected DataCorruption for a short NON-highest segment");

@@ -1,4 +1,4 @@
-# Notices for the MapDB5 store engines
+# Notices for mapdb-java-store
 
 This repository is part of the MapDB project.
 

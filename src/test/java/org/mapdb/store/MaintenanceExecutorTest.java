@@ -25,7 +25,7 @@ public class MaintenanceExecutorTest {
     private final List<File> files = new ArrayList<>();
 
     private File newFile() throws IOException {
-        File f = Files.createTempFile("mapdb5-maint", ".db").toFile();
+        File f = Files.createTempFile("mapdb-maint", ".db").toFile();
         f.delete();
         files.add(f);
         return f;
@@ -38,7 +38,7 @@ public class MaintenanceExecutorTest {
 
     private static boolean anyMaintThreadAlive() {
         for (Thread t : Thread.getAllStackTraces().keySet())
-            if (t.isAlive() && t.getName().startsWith("mapdb5-maint-")) return true;
+            if (t.isAlive() && t.getName().startsWith("mapdb-maint-")) return true;
         return false;
     }
 

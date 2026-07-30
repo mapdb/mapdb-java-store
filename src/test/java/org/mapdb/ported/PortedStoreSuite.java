@@ -30,12 +30,12 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 /**
- * Store-level scenarios ported from the historical suites that the mapdb5 Store TCK
+ * Store-level scenarios ported from the historical suites that the Store TCK
  * did NOT already cover, run across every store dialect (Direct / ByteArray / OnHeap / WAL).
  *
  * Gap filled: the TCK exercises tiny fixed-value records only. The old suites hammered
  * boundary sizes, records around the old 64 KiB linked-record threshold, and records up
- * to the ~1 MiB plain-record cap — all of which mapdb5 must handle as plain records.
+ * to the ~1 MiB plain-record cap — all of which this engine must handle as plain records.
  */
 @RunWith(Parameterized.class)
 public class PortedStoreSuite {
@@ -57,7 +57,7 @@ public class PortedStoreSuite {
             case "ByteArray" -> s = new StoreByteArray();
             case "OnHeap" -> s = new StoreOnHeap();
             case "WAL" -> {
-                File f = File.createTempFile("mapdb5-ported", ".wal");
+                File f = File.createTempFile("mapdb-ported", ".wal");
                 f.delete();
                 tmpFiles.add(f);
                 s = new StoreWAL(f);
@@ -85,8 +85,8 @@ public class PortedStoreSuite {
     // ================================================================
     // boundary sizes — ported from mapdb3 StoreTest.test_sizes /
     // StoreDirectTest.small_ser_size + mapdb2 EngineTest.large_record.
-    // Adapted: mapdb3 reopened the file (StoreDirect is heap-index in mapdb5, no
-    // reopen) and switched to linked records above ~64 KiB — mapdb5 keeps every
+    // Adapted: mapdb3 reopened the file (StoreDirect is heap-index here, no
+    // reopen) and switched to linked records above ~64 KiB — this engine keeps every
     // size below the cap as a single plain record. Max size clamped to MAX_CONTENT.
     // ================================================================
 

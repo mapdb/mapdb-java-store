@@ -15,7 +15,7 @@ public class DeltaStoreDirectFileTest extends DeltaTCK {
 
     @Override protected StoreDelta createStore() {
         try {
-            File f = Files.createTempFile("mapdb5-direct-delta", ".db").toFile();
+            File f = Files.createTempFile("mapdb-direct-delta", ".db").toFile();
             f.delete();
             files.add(f);
             return new StoreDirect(f);

@@ -36,7 +36,7 @@ public class StoreWALBaseIdentityTest {
 
     private File newFile(String tag) {
         try {
-            File f = Files.createTempFile("mapdb5-wal-base-" + tag, ".wal").toFile();
+            File f = Files.createTempFile("mapdb-wal-base-" + tag, ".wal").toFile();
             f.delete();
             files.add(f);
             return f;

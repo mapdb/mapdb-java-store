@@ -27,7 +27,7 @@ public class StoreDirectCompactionTailTest {
     private final List<File> files = new ArrayList<>();
 
     private File newFile() throws IOException {
-        File f = Files.createTempFile("mapdb5-compact-tail", ".db").toFile();
+        File f = Files.createTempFile("mapdb-compact-tail", ".db").toFile();
         f.delete();
         files.add(f);
         return f;

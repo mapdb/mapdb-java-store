@@ -14,7 +14,7 @@ public class DeltaStoreWALTest extends DeltaTCK {
 
     @Override protected StoreDelta createStore() {
         try {
-            File f = Files.createTempFile("mapdb5-wal-delta", ".wal").toFile();
+            File f = Files.createTempFile("mapdb-wal-delta", ".wal").toFile();
             f.delete();
             files.add(f);
             return new StoreWAL(f);

@@ -16,8 +16,8 @@ import java.util.PrimitiveIterator;
  *
  * <h2>Logical guard, not an OS-level mode</h2>
  * This is a <b>logical</b> read-only guard: it rejects mutations at the {@link Store} API.
- * It does <b>not</b> change how the underlying store maps its backing file. mapdb5 file
- * stores still {@code mmap} the file {@code READ_WRITE} at the OS level; this wrapper does
+ * It does <b>not</b> change how the underlying store maps its backing file. This engine's
+ * file stores still {@code mmap} the file {@code READ_WRITE} at the OS level; this wrapper does
  * not (and cannot from here) downgrade that mapping to {@code READ_ONLY}. That is
  * acceptable and matches the intended use: open an existing DB while forbidding writes
  * through the API. Do not rely on this wrapper to protect the file from every possible

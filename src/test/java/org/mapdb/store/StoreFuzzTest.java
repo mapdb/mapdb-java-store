@@ -51,7 +51,7 @@ public class StoreFuzzTest {
     @Test public void fuzz_direct_and_wal_match_reference() throws IOException {
         long seed = Long.getLong("fuzz.seed", 0xDEADBEEF12345L);
         System.out.println("StoreFuzzTest seed=" + Long.toHexString(seed) + " ops=" + OPS + " slots=" + N_SLOTS);
-        File walFile = Files.createTempFile("mapdb5-fuzz", ".wal").toFile();
+        File walFile = Files.createTempFile("mapdb-fuzz", ".wal").toFile();
         walFile.delete();
         StoreWAL wal = new StoreWAL(walFile);
         stores = new StoreDelta[]{new StoreByteArray(), new StoreDirect(), wal, new StoreAppendOnly(),

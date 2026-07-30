@@ -8,7 +8,7 @@ import java.util.ArrayList;
 
 /**
  * Bottom-up bulk builder for the B-link trees in this package — the mapdb1/2/3
- * "Pump", rebuilt for Store4 and the mapdb5 node shape. Feed it strictly
+ * "Pump", rebuilt for Store4 and this engine's node shape. Feed it strictly
  * ascending entries via {@link #put}, then {@link #finish()} once; every node is
  * written EXACTLY once through the bulk path:
  *
@@ -25,7 +25,7 @@ import java.util.ArrayList;
  * consumes every one of them as that level's final (rightmost) node, so nothing
  * leaks and no link dangles.
  *
- * Node shape produced (mapdb5, NOT mapdb3 — no duplicated boundary keys):
+ * Node shape produced (this engine's shape, NOT mapdb3's — no duplicated boundary keys):
  * interior nodes are filled to {@code nodeFill} entries; a flushed leaf's last
  * key becomes its inclusive high bound, propagated up as the parent separator
  * (the sink also writes it as the leaf's fence where the tree has one).

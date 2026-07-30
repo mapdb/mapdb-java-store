@@ -44,7 +44,7 @@ public class StoreNoLockTests {
 
         @Override protected Store createStore() {
             try {
-                File f = Files.createTempFile("mapdb5-wal-nolock", ".wal").toFile();
+                File f = Files.createTempFile("mapdb-wal-nolock", ".wal").toFile();
                 f.delete();
                 files.add(f);
                 return new StoreWAL(f, false, false);
@@ -74,7 +74,7 @@ public class StoreNoLockTests {
 
         @Override protected StoreDelta createStore() {
             try {
-                File f = Files.createTempFile("mapdb5-wal-delta-nolock", ".wal").toFile();
+                File f = Files.createTempFile("mapdb-wal-delta-nolock", ".wal").toFile();
                 f.delete();
                 files.add(f);
                 return new StoreWAL(f, false, false);

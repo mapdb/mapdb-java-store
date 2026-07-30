@@ -13,7 +13,7 @@ import org.mapdb.ser.Serializers;
 
 public class DBQueueTest {
     @Test public void queueFamiliesPersistAndDispatch() throws Exception {
-        File file = File.createTempFile("mapdb5-queues", ".db");
+        File file = File.createTempFile("mapdb-queues", ".db");
         file.delete();
         try {
             DB db = DBMaker.fileDB(file).transactionEnable().make();

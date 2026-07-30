@@ -25,7 +25,7 @@ import org.mapdb.ser.StringGroupFormat;
 public class DBReadOnlyMakerTest {
 
     private static File freshFile() throws Exception {
-        File f = File.createTempFile("mapdb5ro", ".db");
+        File f = File.createTempFile("mapdb-ro", ".db");
         f.delete();
         return f;
     }

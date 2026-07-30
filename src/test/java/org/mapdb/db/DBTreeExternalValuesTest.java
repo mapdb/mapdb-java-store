@@ -12,7 +12,7 @@ import org.mapdb.ser.StringGroupFormat;
 
 public class DBTreeExternalValuesTest {
     @Test public void catalogPersistence() throws Exception {
-        File file = File.createTempFile("mapdb5-tree-external", ".db");
+        File file = File.createTempFile("mapdb-tree-external", ".db");
         file.delete();
         try {
             DB db = DBMaker.fileDB(file).transactionEnable().make();

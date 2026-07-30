@@ -187,7 +187,7 @@ public class ExpireQueueTest {
 
     @Test
     public void directQueueSurvivesReopenAndKeepsNodeRecidsStable() throws IOException {
-        File f = Files.createTempFile("mapdb5-expireq-direct", ".db").toFile();
+        File f = Files.createTempFile("mapdb-expireq-direct", ".db").toFile();
         f.delete();
         long tail, head, headPrev, r1, r2, r3;
         try {
@@ -250,7 +250,7 @@ public class ExpireQueueTest {
 
     @Test
     public void walQueueSurvivesCommitCheckpointReopenAndClears() throws IOException {
-        File f = Files.createTempFile("mapdb5-expireq-wal", ".wal").toFile();
+        File f = Files.createTempFile("mapdb-expireq-wal", ".wal").toFile();
         f.delete();
         long tail, head, headPrev, r2, r4;
         try {

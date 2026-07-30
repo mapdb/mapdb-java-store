@@ -111,7 +111,7 @@ public class DBSmokeTest {
     }
 
     @Test public void persistAcrossReopen() throws Exception {
-        File f = File.createTempFile("mapdb5db", ".db");
+        File f = File.createTempFile("mapdb-db", ".db");
         f.delete();
         try {
             DB db = DBMaker.fileDB(f).transactionEnable().make();
@@ -180,7 +180,7 @@ public class DBSmokeTest {
 
     @Test public void rollbackClearsCache() {
         File tmp;
-        try { tmp = File.createTempFile("mapdb5rb", ".db"); tmp.delete(); }
+        try { tmp = File.createTempFile("mapdb-rb", ".db"); tmp.delete(); }
         catch (Exception e) { throw new RuntimeException(e); }
         try {
             DB db = DBMaker.fileDB(tmp).transactionEnable().make();
@@ -227,7 +227,7 @@ public class DBSmokeTest {
     }
 
     @Test public void byteArrayKeysWithContentHasher() throws Exception {
-        File f = File.createTempFile("mapdb5hash", ".db");
+        File f = File.createTempFile("mapdb-hash", ".db");
         f.delete();
         try {
             DB db = DBMaker.fileDB(f).transactionEnable().make();

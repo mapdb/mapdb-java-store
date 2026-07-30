@@ -51,7 +51,7 @@ public class CapacityOverflowTest {
     }
 
     @Test public void store_wal_rejects_headroom_overflow_before_logging() throws IOException {
-        walFile = Files.createTempFile("mapdb5-cap-ovf", ".wal").toFile();
+        walFile = Files.createTempFile("mapdb-cap-ovf", ".wal").toFile();
         walFile.delete();
         StoreWAL s = new StoreWAL(walFile);
         try {

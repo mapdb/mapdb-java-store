@@ -1353,7 +1353,7 @@ public final class HTreeCache<K, V> extends AbstractMap<K, V> implements MapExtr
      *  written once at create (§0.6). The on-disk header format is PRE-RELEASE and not yet
      *  stable: fields (e.g. {@code storeSize}) are added inline as the collection evolves, so
      *  a header must be written and read by the same code version (no cross-version migration
-     *  — mapdb5 is under the store redesign and makes no on-disk compatibility promise). */
+     *  — this engine is under the store redesign and makes no on-disk compatibility promise). */
     private static final class Header {
         final int concShift, dirShift, levels, hashSeed;
         final long ttl, maxSize, storeSize, maxEvictPerOp;

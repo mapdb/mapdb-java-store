@@ -46,12 +46,12 @@ import java.util.Random;
  * <p><b>Run it on a real filesystem.</b> {@code java.io.tmpdir} is tmpfs on this machine, where
  * {@code fsync} is a no-op and a whole-store checkpoint degenerates to a memcpy — which biases the
  * measurement squarely AGAINST the thing being tested, since the pause the incremental cleaner
- * removes is mostly bytes-plus-force. {@code -Dmapdb5.pause.dir} selects the directory and
+ * removes is mostly bytes-plus-force. {@code -Dmapdb.pause.dir} selects the directory and
  * defaults to {@code target/pause-bench} under the module, which is on disk.
  *
  * <p>This is a MEASUREMENT, not a target assertion: it prints tables and asserts only liveness.
  * Run: {@code mvn -o test -Dtest=WalPauseTest -DfailIfNoTests=false}
- * Scale with {@code -Dmapdb5.pause.ops=...} (default 60 000).
+ * Scale with {@code -Dmapdb.pause.ops=...} (default 60 000).
  */
 public class WalPauseTest {
 
@@ -59,8 +59,8 @@ public class WalPauseTest {
     private static final int NODE_SIZE = 256;
     private static final int BUFFER_BYTES = 4096;
 
-    private static final int ENTRIES = Integer.getInteger("mapdb5.pause.entries", 20_000);
-    private static final int OPS = Integer.getInteger("mapdb5.pause.ops", 60_000);
+    private static final int ENTRIES = Integer.getInteger("mapdb.pause.entries", 20_000);
+    private static final int OPS = Integer.getInteger("mapdb.pause.ops", 60_000);
 
     /**
      * The trigger floor, set identically on both revisions. In the whole-store-checkpoint revision
@@ -90,15 +90,15 @@ public class WalPauseTest {
      * point is latency also has no business competing with the rest of the suite for the machine.
      */
     @org.junit.Before public void optIn() {
-        org.junit.Assume.assumeTrue("set -Dmapdb5.pause=true to run the pause harness",
-                Boolean.getBoolean("mapdb5.pause"));
+        org.junit.Assume.assumeTrue("set -Dmapdb.pause=true to run the pause harness",
+                Boolean.getBoolean("mapdb.pause"));
     }
 
     private File newFile(String tag) {
         try {
-            Path dir = Path.of(System.getProperty("mapdb5.pause.dir", "target/pause-bench"));
+            Path dir = Path.of(System.getProperty("mapdb.pause.dir", "target/pause-bench"));
             Files.createDirectories(dir);
-            File f = Files.createTempFile(dir, "mapdb5-pause-" + tag, ".wal").toFile();
+            File f = Files.createTempFile(dir, "mapdb-pause-" + tag, ".wal").toFile();
             f.delete();
             files.add(f);
             return f;
@@ -331,12 +331,12 @@ public class WalPauseTest {
      *
      * <p>{@code ops} is scaled per size to ~2.5× the trigger target, so each row crosses the
      * trigger a similar number of times rather than a number that shrinks as the target grows.
-     * Enable with {@code -Dmapdb5.pause.sweep=true} (it writes hundreds of MB and takes minutes).
+     * Enable with {@code -Dmapdb.pause.sweep=true} (it writes hundreds of MB and takes minutes).
      */
     @Test
     public void pause_vs_store_size() throws Exception {
-        org.junit.Assume.assumeTrue("set -Dmapdb5.pause.sweep=true to run the sweep",
-                Boolean.getBoolean("mapdb5.pause.sweep"));
+        org.junit.Assume.assumeTrue("set -Dmapdb.pause.sweep=true to run the sweep",
+                Boolean.getBoolean("mapdb.pause.sweep"));
         // entries → ops. ~225 log bytes per entry on this workload, so the target is
         // max(8 MiB, 2 × 225 × entries); ~1 030 bytes/op puts 2.5 targets' worth of traffic in.
         int[][ ] grid = {{20_000, 22_000}, {80_000, 90_000}, {320_000, 350_000}};

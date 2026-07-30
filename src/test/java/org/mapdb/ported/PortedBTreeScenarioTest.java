@@ -30,7 +30,7 @@ import static org.junit.Assert.assertTrue;
 
 /**
  * BTreeMap regression scenarios ported from the historical suites, expressed using only
- * the mapdb5 BTreeMap skeleton API (put/get/remove/containsKey/sizeLong/entryIterator).
+ * this engine's BTreeMap skeleton API (put/get/remove/containsKey/sizeLong/entryIterator).
  * Run across every store dialect.
  */
 @RunWith(Parameterized.class)
@@ -52,7 +52,7 @@ public class PortedBTreeScenarioTest {
             case "ByteArray" -> { return new StoreByteArray(); }
             case "OnHeap" -> { return new StoreOnHeap(); }
             case "WAL" -> {
-                tmp = File.createTempFile("mapdb5-ported-btree", ".wal");
+                tmp = File.createTempFile("mapdb-ported-btree", ".wal");
                 tmp.delete();
                 return new StoreWAL(tmp);
             }
@@ -139,7 +139,7 @@ public class PortedBTreeScenarioTest {
 
     // ported from mapdb1/2 Issue157Test: two threads write the same key range in opposite
     // directions; afterward every key is present with one of the two writers' values (no
-    // torn/garbage value). mapdb5's single writer-lock serializes the puts — the property
+    // torn/garbage value). This engine's single writer-lock serializes the puts — the property
     // still holds and guards against corruption.
     @Test public void issue157_concurrent_bidirectional_put() throws Exception {
         final BTreeMap<Long, String> m = BTreeMap.create(

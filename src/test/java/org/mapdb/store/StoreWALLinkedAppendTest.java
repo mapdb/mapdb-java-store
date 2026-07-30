@@ -38,7 +38,7 @@ public class StoreWALLinkedAppendTest {
 
     private File newFile(String tag) {
         try {
-            File f = Files.createTempFile("mapdb5-wal-linked-" + tag, ".wal").toFile();
+            File f = Files.createTempFile("mapdb-wal-linked-" + tag, ".wal").toFile();
             f.delete();
             files.add(f);
             return f;

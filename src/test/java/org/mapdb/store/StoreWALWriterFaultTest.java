@@ -97,7 +97,7 @@ public class StoreWALWriterFaultTest {
 
     private File newFile() {
         try {
-            File f = Files.createTempFile("mapdb5-wal-tier2", ".wal").toFile();
+            File f = Files.createTempFile("mapdb-wal-tier2", ".wal").toFile();
             f.delete();
             files.add(f);
             return f;

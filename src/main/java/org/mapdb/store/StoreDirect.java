@@ -26,7 +26,7 @@ import java.util.concurrent.locks.ReadWriteLock;
  * page size == volume slice == 1 MB; nothing ever crosses a page boundary.
  *
  * page 0 (header):
- *   0   magic "MDB5.SD1" (8)
+ *   0   magic "MDBS.SD1" (8)
  *   8   feature bits int (must be 0)                12  reserved int
  *   16  header checksum int (written by commit/close; verified on open)
  *   24  dataTail  parity4   (allocation cursor inside the current data page; 0 = none)
@@ -71,8 +71,8 @@ public class StoreDirect implements StoreDelta {
 
     static final long PAGE_SIZE = ByteBufferVol.SLICE_SIZE;
 
-    /** "MDB5.SD1" — the trailing byte is the format version. */
-    static final long MAGIC = 0x4D4442352E534431L;
+    /** "MDBS.SD1" — the trailing byte is the format version. */
+    static final long MAGIC = 0x4D4442532E534431L;
 
     static final long O_FEATURES = 8;
     static final long O_HEAD_CHECKSUM = 16;
@@ -232,7 +232,7 @@ public class StoreDirect implements StoreDelta {
         if (vol.length() < PAGE_SIZE)
             throw new DBException.DataCorruption("store file smaller than the header page");
         if (vol.getLong(0) != MAGIC)
-            throw new DBException.DataCorruption("not a mapdb5 StoreDirect file (bad magic)");
+            throw new DBException.DataCorruption("not a mapdb StoreDirect file (bad magic)");
         int features = vol.getInt(O_FEATURES);
         if (features != 0)
             throw new DBException("store uses unsupported feature bits: 0x" + Integer.toHexString(features));

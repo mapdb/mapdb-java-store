@@ -47,7 +47,7 @@ public class StoreWALCleanerTest {
 
     private File newFile() {
         try {
-            File f = Files.createTempFile("mapdb5-wal-cleaner", ".wal").toFile();
+            File f = Files.createTempFile("mapdb-wal-cleaner", ".wal").toFile();
             f.delete();
             files.add(f);
             return f;

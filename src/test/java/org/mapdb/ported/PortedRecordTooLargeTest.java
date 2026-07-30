@@ -86,7 +86,7 @@ public class PortedRecordTooLargeTest {
 
     // WAL stores oversize merged records as linked chains at commit and replays them.
     @Test public void wal_over_cap_commits_and_survives_reopen() throws Exception {
-        File f = File.createTempFile("mapdb5-ported-toolarge", ".wal");
+        File f = File.createTempFile("mapdb-ported-toolarge", ".wal");
         f.delete();
         byte[] over = Ported.bytes(Ported.MAX_CONTENT + 1, 7);
         long r;

@@ -26,7 +26,7 @@ public class StoreDirectLongStackTest {
     private final List<File> files = new ArrayList<>();
 
     private File newFile() throws IOException {
-        File f = Files.createTempFile("mapdb5-longstack", ".db").toFile();
+        File f = Files.createTempFile("mapdb-longstack", ".db").toFile();
         f.delete();
         files.add(f);
         return f;
