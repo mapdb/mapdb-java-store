@@ -3,6 +3,7 @@ package org.mapdb.btree;
 import org.junit.After;
 import org.junit.Test;
 import org.mapdb.format.BufferedPageFormat;
+import org.mapdb.format.FpModeTestHook;
 import org.mapdb.io.DataInput2;
 import org.mapdb.io.DataOutput2;
 import org.mapdb.ser.GroupCursor;
@@ -37,7 +38,7 @@ public class BufferTreeFingerprintTest {
 
     private static final GroupFormat<Long> LF = LongFormat.INSTANCE;
 
-    @After public void resetMode() { BufferedPageFormat.fpMode = BufferedPageFormat.FpMode.NORMAL; }
+    @After public void resetMode() { FpModeTestHook.set(FpModeTestHook.Mode.NORMAL); }
 
     /** Random put/remove workload into m mirrored by a TreeMap oracle. */
     private static TreeMap<Long, Long> fuzz(BufferTreeMap<Long, Long> m, long seed, int ops, int keySpace) {
@@ -60,13 +61,13 @@ public class BufferTreeFingerprintTest {
                 BufferTreeMap<Long, Long> m = BufferTreeMap.create(s, LF, LF, 16, 128);
                 TreeMap<Long, Long> oracle = fuzz(m, 424242L, 8000, 2500);
                 // one physical tree; only the READ decision changes per mode.
-                for (BufferedPageFormat.FpMode mode : BufferedPageFormat.FpMode.values()) {
-                    BufferedPageFormat.fpMode = mode;
+                for (FpModeTestHook.Mode mode : FpModeTestHook.Mode.values()) {
+                    FpModeTestHook.set(mode);
                     for (long k = -50; k < 3000; k++)   // present AND absent probes
                         assertEquals("store=" + s.getClass().getSimpleName() + " mode=" + mode + " k=" + k,
                                 oracle.get(k), m.get(k));
                 }
-                BufferedPageFormat.fpMode = BufferedPageFormat.FpMode.NORMAL;
+                FpModeTestHook.set(FpModeTestHook.Mode.NORMAL);
             }
         } finally { wal.delete(); }
     }
@@ -92,13 +93,13 @@ public class BufferTreeFingerprintTest {
 
         final int N = 1000;                                   // odd keys 20001..21999 — all absent
         // NORMAL: only Bloom false-positives reach the base search.
-        BufferedPageFormat.fpMode = BufferedPageFormat.FpMode.NORMAL;
+        FpModeTestHook.set(FpModeTestHook.Mode.NORMAL);
         cf.binarySearches = 0;
         for (int i = 0; i < N; i++) assertNull(m.get(20001L + 2L * i));
         int normalSearches = cf.binarySearches;
 
         // FORCE_SEARCH (== accelerator disabled): EVERY miss searches the base (one leaf each).
-        BufferedPageFormat.fpMode = BufferedPageFormat.FpMode.FORCE_SEARCH;
+        FpModeTestHook.set(FpModeTestHook.Mode.FORCE_SEARCH);
         cf.binarySearches = 0;
         for (int i = 0; i < N; i++) assertNull(m.get(20001L + 2L * i));
         int forceSearches = cf.binarySearches;
@@ -108,7 +109,7 @@ public class BufferTreeFingerprintTest {
                 + "/" + N + ")", normalSearches <= N / 5);
 
         // a present key always searches (fp says "maybe" for a real base member — no false negative)
-        BufferedPageFormat.fpMode = BufferedPageFormat.FpMode.NORMAL;
+        FpModeTestHook.set(FpModeTestHook.Mode.NORMAL);
         cf.binarySearches = 0;
         assertEquals((Long) (10L * 11), m.get(10L));
         assertTrue("present key must search the base", cf.binarySearches >= 1);

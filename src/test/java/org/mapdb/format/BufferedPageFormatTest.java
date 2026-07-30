@@ -317,7 +317,7 @@ public class BufferedPageFormatTest {
         try {
             for (BufferedPageFormat.FpMode mode : new BufferedPageFormat.FpMode[]{
                     BufferedPageFormat.FpMode.FORCE_SEARCH, BufferedPageFormat.FpMode.RANDOM}) {
-                BufferedPageFormat.fpMode = mode;
+                BufferedPageFormat.testSetFpMode(mode);
                 // FORCE_SEARCH/RANDOM may only add "maybe"; a definite-absent (false) can only come
                 // from a real bit miss under NORMAL, so under these modes a known absent may report
                 // either — but a known PRESENT must still always be "maybe".
@@ -325,7 +325,7 @@ public class BufferedPageFormatTest {
                     assertTrue(f.baseFpMightContain(in, h, probe(20L)));
             }
         } finally {
-            BufferedPageFormat.fpMode = BufferedPageFormat.FpMode.NORMAL;
+            BufferedPageFormat.testSetFpMode(BufferedPageFormat.FpMode.NORMAL);
         }
     }
 

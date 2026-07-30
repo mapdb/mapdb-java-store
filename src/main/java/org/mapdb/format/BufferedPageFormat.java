@@ -116,16 +116,20 @@ public final class BufferedPageFormat<K, V> {
     /**
      * Correctness-neutrality (P7) test knob. It may only ever make {@link #baseFpMightContain}
      * return {@code true} (i.e. force MORE base searching); it can NEVER synthesize a "definite
-     * absent" — so results are identical in every mode. Package/test visible.
+     * absent" — so results are identical in every mode. Package-private: a JVM-global switch is
+     * a test instrument, not shipped API.
      */
-    public enum FpMode {
+    enum FpMode {
         /** Honor the filter (production). */ NORMAL,
         /** Never skip: always full base search (== accelerator disabled). */ FORCE_SEARCH,
         /** Randomly force a full base search (proves neutrality under a random oracle). */ RANDOM
     }
 
-    /** Global test hook; NORMAL in production. */
-    public static volatile FpMode fpMode = FpMode.NORMAL;
+    /** Global test hook; NORMAL in production. Set via {@link #testSetFpMode}. */
+    private static volatile FpMode fpMode = FpMode.NORMAL;
+
+    /** Test hook; {@code null} restores {@link FpMode#NORMAL} (production). */
+    static void testSetFpMode(FpMode mode) { fpMode = mode == null ? FpMode.NORMAL : mode; }
 
     /** Parsed + VALIDATED base header; reusable (fill via {@link #parseBaseHeader}). */
     public static final class BaseHeader {
@@ -299,7 +303,7 @@ public final class BufferedPageFormat<K, V> {
      * {@code true} = the key MAY be in the base (must search); {@code false} = the key is DEFINITELY
      * NOT a base key (skip the base search). No false negatives: a base member always tests true.
      * {@code probeKeyBytes} is the canonical key serialization. When there is no filter
-     * ({@code h.fpLen == 0}) or under a non-NORMAL {@link #fpMode}, returns {@code true} (search) —
+     * ({@code h.fpLen == 0}) or under a non-NORMAL {@code fpMode} test knob, returns {@code true} (search) —
      * it can only ever force MORE searching, never a skip.
      */
     public boolean baseFpMightContain(DataInput2 page, BaseHeader h, byte[] probeKeyBytes) {

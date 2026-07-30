@@ -443,6 +443,17 @@ public abstract class StoreTCK {
         assertStoreClosed(s::getAllRecids);
     }
 
+    /** Store is AutoCloseable with an unchecked close(): the block below must need no catch. */
+    @Test public void try_with_resources_closes() {
+        Store outside;
+        try (Store s = openStore()) {
+            s.put(1L, LONG);
+            assertFalse(s.isClosed());
+            outside = s;
+        }
+        assertTrue("try-with-resources must have closed the store", outside.isClosed());
+    }
+
     // ================= misc round trips =================
 
     @Test public void put_get_roundtrip_strings() {

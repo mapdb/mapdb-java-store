@@ -11,8 +11,12 @@ import java.util.PrimitiveIterator;
  * Edge-case semantics are defined by {@code StoreTCK}, which every concrete store runs;
  * that suite, not any prose document, is the contract.
  * Recid 0 is never allocated (universal "no link" sentinel).
+ *
+ * {@link AutoCloseable} so a store can be opened in a try-with-resources block; {@link #close()}
+ * narrows away the interface's {@code throws Exception} (as {@code Closeable} does), because a
+ * store reports failures as unchecked {@code DBException}.
  */
-public interface Store {
+public interface Store extends AutoCloseable {
 
     /** Reserve a recid with null content (P state). get() returns null; update() fills it. */
     long preallocate();
@@ -44,6 +48,8 @@ public interface Store {
         // no-op for stores without physical fragmentation
     }
 
+    /** Narrows {@link AutoCloseable#close()}: failures surface as unchecked {@code DBException}. */
+    @Override
     void close();
 
     boolean isClosed();
