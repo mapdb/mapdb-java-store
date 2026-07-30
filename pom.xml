@@ -1,0 +1,142 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>org.mapdb</groupId>
+    <artifactId>mapdb-java-store</artifactId>
+    <version>0.1-SNAPSHOT</version>
+    <packaging>jar</packaging>
+
+    <name>mapdb-java-store</name>
+    <description>MapDB5 storage engine: a push-down record store with write-ahead
+logging and crash recovery, plus a B+tree map and the collection serializers built
+on it. Reference implementation for the Rust and Zig ports.</description>
+
+    <url>https://github.com/mapdb/mapdb-java-store</url>
+
+    <inceptionYear>2026</inceptionYear>
+
+    <licenses>
+        <license>
+            <name>Eclipse Public License - v 1.0</name>
+            <url>https://www.eclipse.org/legal/epl-v10.html</url>
+            <distribution>repo</distribution>
+        </license>
+        <license>
+            <name>Eclipse Distribution License - v 1.0</name>
+            <url>https://www.eclipse.org/licenses/edl-v10.html</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
+
+    <scm>
+        <url>https://github.com/mapdb/mapdb-java-store</url>
+        <connection>scm:git:https://github.com/mapdb/mapdb-java-store.git</connection>
+        <developerConnection>scm:git:https://github.com/mapdb/mapdb-java-store.git</developerConnection>
+    </scm>
+
+    <issueManagement>
+        <system>GitHub</system>
+        <url>https://github.com/mapdb/mapdb-java-store/issues</url>
+    </issueManagement>
+
+    <developers>
+        <developer>
+            <id>jankotek</id>
+            <name>Jan Kotek</name>
+            <email>jan@kotek.net</email>
+        </developer>
+    </developers>
+
+    <properties>
+        <maven.compiler.release>17</maven.compiler.release>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>junit</groupId>
+            <artifactId>junit</artifactId>
+            <version>4.13.2</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <resources>
+            <!-- The ordinary resource root. -->
+            <resource>
+                <directory>src/main/resources</directory>
+            </resource>
+            <!--
+              Ship the licence and notice inside the artifact, not just in the
+              source tree: a consumer who only ever sees the JAR is entitled to
+              the terms it is offered under.
+            -->
+            <resource>
+                <directory>${project.basedir}</directory>
+                <targetPath>META-INF</targetPath>
+                <includes>
+                    <include>LICENSE-EPL-1.0.txt</include>
+                    <include>LICENSE-EDL-1.0.txt</include>
+                    <include>NOTICE.md</include>
+                </includes>
+            </resource>
+        </resources>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.2.5</version>
+                <configuration>
+                    <!--
+                      Assertions are enabled deliberately: the store's internal
+                      invariants are expressed as `assert` statements, and a test
+                      run with assertions disabled silently checks much less.
+                      Surefire picks up `*Test.java` only; the `*IT.java` stress
+                      and scale suites run under the `integration-tests` profile
+                      below.
+                    -->
+                    <enableAssertions>true</enableAssertions>
+                    <argLine>-Xmx2g</argLine>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+
+    <profiles>
+        <!--
+          The `*IT.java` suites are long-running stress, scale and volume tests
+          (tens of minutes, several GB of temporary files). They are NOT part of
+          `mvn test` or a plain `mvn verify`. Run them explicitly with:
+
+              mvn -P integration-tests verify
+        -->
+        <profile>
+            <id>integration-tests</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-failsafe-plugin</artifactId>
+                        <version>3.2.5</version>
+                        <configuration>
+                            <enableAssertions>true</enableAssertions>
+                            <argLine>-Xmx4g</argLine>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <goals>
+                                    <goal>integration-test</goal>
+                                    <goal>verify</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
+</project>
