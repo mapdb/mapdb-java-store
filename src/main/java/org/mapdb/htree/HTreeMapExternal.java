@@ -28,9 +28,9 @@ import java.util.function.BiConsumer;
 /**
  * {@link HTreeMap} variant with EXTERNAL values: the bucket stores {@code (key,
  * valueRecid)} pairs and each value lives in its own store record. A deliberate,
- * self-contained duplicate of the lean inline-value HTreeMap (maintainer steer in
- * spec-htreemap/NEXT.md: separate class over feature flags in the hot paths); the
- * dir-tree machinery ({@link DirTree}) is shared unchanged.
+ * self-contained duplicate of the lean inline-value HTreeMap (kept as a separate class
+ * rather than feature flags in the hot paths); the dir-tree machinery
+ * ({@link DirTree}) is shared unchanged.
  *
  * The trade vs inline values:
  *  - bucket scans deserialize KEYS ONLY — a collision bucket holding megabyte values
@@ -46,7 +46,7 @@ import java.util.function.BiConsumer;
  * outlive the lock or a concurrent remove could free it mid-read.
  *
  * Hashing, locking, iteration snapshots, persistence and the concurrency contract
- * are identical to {@link HTreeMap} (spec-htreemap §0.2–0.8); see its javadoc.
+ * are identical to {@link HTreeMap}; see its javadoc.
  *
  * Implements {@link java.util.Map} and {@link java.util.concurrent.ConcurrentMap}
  * with the same weak-consistency and {@link #size} saturation caveats as
@@ -102,7 +102,7 @@ public final class HTreeMapExternal<K, V> extends AbstractMap<K, V> implements M
 
     private static void checkConfig(int concShift, int dirShift, int levels) {
         // hard cap 12 (4096 segments): segments are lock granularity, more was measured
-        // as a cache-scatter regression (spec-htreemap STATUS.md reverted-experiments)
+        // as a cache-scatter regression
         if (concShift < 0 || concShift > 12)
             throw new IllegalArgumentException("concShift must be in [0,12]");
         if (dirShift < 1 || dirShift > DirTree.MAX_DIR_SHIFT)

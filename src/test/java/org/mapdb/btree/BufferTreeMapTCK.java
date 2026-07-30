@@ -1274,7 +1274,7 @@ public abstract class BufferTreeMapTCK {
         assertNavLong(m, oracle);
     }
 
-    /** descendingMap: §D method mapping, reversed non-null comparator, nested descending
+    /** descendingMap: orientation method mapping, reversed non-null comparator, nested descending
      *  subMaps, and descendingMap().descendingMap() behavioral identity with the original. */
     @Test
     public void descendingMapMappingAndDoubleReverse() {
@@ -1291,10 +1291,10 @@ public abstract class BufferTreeMapTCK {
         assertTrue("descending comparator must reverse", dm.comparator().compare(1L, 2L) > 0);
         assertEquals(Collections.reverseOrder(), dm.comparator());
 
-        // §D mapping: descending firstEntry = backing greatest, etc. — oracle-checked wholesale
+        // orientation mapping: descending firstEntry = backing greatest, etc. — oracle-checked wholesale
         assertNavLong(dm, odm);
 
-        // spot-check the §D orientation flips directly against the ascending map
+        // spot-check the orientation flips directly against the ascending map
         assertEquals(m.lastEntry(), dm.firstEntry());
         assertEquals(m.firstEntry(), dm.lastEntry());
         assertEquals(m.higherEntry(500L), dm.lowerEntry(500L));   // desc lower = backing higher

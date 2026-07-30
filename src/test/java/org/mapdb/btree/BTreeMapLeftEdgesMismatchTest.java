@@ -13,8 +13,8 @@ import static org.junit.Assert.fail;
 
 /**
  * Hard-corruption backstop for a stale/mismatched {@code leftEdges} at a root grow
- * (the guard at {@code propagateSplit}'s root-grow branch — the same guard fix 2's
- * tx refresh keeps a rollback from tripping). The zig/rust spec require this to be a
+ * (the guard at {@code propagateSplit}'s root-grow branch — the same guard the tx
+ * refresh keeps a rollback from tripping). The Rust and Zig ports require this to be a
  * HARD {@link DBException.DataCorruption} plus {@code poisoned = true}, NEVER an
  * assert-only path — so the throw must not depend on {@code -ea}, and the map must
  * fail fast on every later op.

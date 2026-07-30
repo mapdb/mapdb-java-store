@@ -16,7 +16,7 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 /**
- * Compaction TAIL (roadmap R8): index-page relocation and linked/oversize-chunk
+ * Compaction TAIL: index-page relocation and linked/oversize-chunk
  * relocation folded into the bounded incremental compactor. Covers correctness + reopen for both
  * new move kinds, crash-refuses-reopen for both, and bad-plan -> no-op (validators degrade a
  * corrupt plan instead of writing corruption). verify() is the double-use / lost-extent oracle.

@@ -27,7 +27,7 @@ import static org.junit.Assert.assertTrue;
 
 /**
  * Integration tests for the R1 base-fingerprint negative-lookup accelerator
- * ({@link BufferedPageFormat} base filter, spec-missing #10). Proves: correctness is neutral to the
+ * ({@link BufferedPageFormat} base filter). Proves: correctness is neutral to the
  * accelerator (P7: NORMAL / DISABLED / RANDOM give identical results on the SAME physical pages); no
  * present key is ever reported absent (no false negatives); a definite base-miss point read SKIPS the
  * leaf base binary search (measurable via a counting group format); the fingerprint is rebuilt on
@@ -128,7 +128,7 @@ public class BufferTreeFingerprintTest {
         for (long k = -10; k < 3200; k++)
             assertEquals("k=" + k, oracle.get(k), m.get(k));
 
-        // HIGH-4: a base key deleted via a log tombstone reads absent even though its bits are set
+        // A base key deleted via a log tombstone reads absent even though its bits are set
         // in the (pre-delete) fingerprint — the log DELETE is authoritative before the fp is consulted.
         BufferTreeMap<Long, Long> m2 = BufferTreeMap.create(new StoreDirect(false), LF, LF, 8, 64);
         m2.put(42L, 4200L);

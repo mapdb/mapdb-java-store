@@ -37,8 +37,8 @@ public interface GroupFormat<A> {
     int search(Object group, A key);
 
     /**
-     * Total order over keys, shared with {@link #search}. Invariant (spec-btree-map
-     * item A): {@code compare(a, b) == 0} iff {@link #search}{@code (group, a)} treats
+     * Total order over keys, shared with {@link #search}. Invariant:
+     * {@code compare(a, b) == 0} iff {@link #search}{@code (group, a)} treats
      * {@code a} as the SAME key as {@code b} — i.e. {@code compare}, {@link #search}
      * and {@link #binarySearch} are ONE coherent order. The default delegates to the
      * element serializer's {@link Serializer#compare}; a format whose stored node
@@ -100,7 +100,7 @@ public interface GroupFormat<A> {
         throw new UnsupportedOperationException("format does not support binary access: " + getClass().getName());
     }
 
-    // ---- byte side: sequential / range cursor (spec-missing #10) ----
+    // ---- byte side: sequential / range cursor ----
 
     /**
      * Capability flag for {@link #rangeCursor}. Defaults to {@link #supportsBinary()}: every

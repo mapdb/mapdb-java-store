@@ -25,8 +25,8 @@ import java.util.Random;
  * that total into {@code T_RECORD} (full record images) vs {@code T_APPEND} (delta bytes) vs
  * framing overhead. The distinction is load-bearing: bytes that are already {@code T_APPEND}
  * are ALREADY delta-granular, so a delta-aware WAL cannot shrink them. Only the
- * {@code T_RECORD} share is addressable — either by not collapsing appends into images
- * (design §2.4) or, for a collection that rewrites whole nodes, by adopting R1 pages.
+ * {@code T_RECORD} share is addressable — either by not collapsing appends into images,
+ * or, for a collection that rewrites whole nodes, by adopting R1 pages.
  *
  * <p>Parses the v1 format directly (magic + 25-byte section header + packLong-framed
  * entries, {@code StoreWAL.java:30-51}) rather than instrumenting the writer, so it measures

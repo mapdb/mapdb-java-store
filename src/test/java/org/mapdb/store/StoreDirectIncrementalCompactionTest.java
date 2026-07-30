@@ -18,7 +18,7 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 /**
- * Incremental (bounded, structure-aware) compaction for StoreDirect (roadmap R8).
+ * Incremental (bounded, structure-aware) compaction for StoreDirect.
  * Property: after any sequence of compactStep()/compactIncremental() calls the store
  * holds EXACTLY the same logical content (every live recid resolves to identical bytes,
  * deleted recids stay void), the on-volume invariants hold (verify()), reclaimed pages

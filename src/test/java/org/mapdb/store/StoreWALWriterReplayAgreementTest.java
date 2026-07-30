@@ -25,7 +25,7 @@ import static org.junit.Assert.fail;
  * because the store is unopenable rather than merely stale.
  *
  * <p>Each case here is a place where the writer and the recovery decoder disagreed about what
- * is legal. Found by adversarial review.
+ * is legal.
  */
 public class StoreWALWriterReplayAgreementTest {
 

@@ -29,7 +29,7 @@ import static org.mapdb.stress.StressSupport.*;
  * poll/get/nav result can be checked for value integrity with zero bookkeeping, and the
  * check is stable across insert/remove/re-insert cycles of the same key.
  *
- * <h3>Poll guarantee under test (spec: nav-impl-context §Cost/consistency)</h3>
+ * <h3>Poll guarantee under test</h3>
  * {@code pollFirstEntry/pollLastEntry} are ATOMIC on the (key,value) PAIR via a
  * conditional-remove retry loop: they NEVER remove a value they did not return. The
  * least/greatest SELECTION is only weakly consistent, so we do NOT assert linearizability

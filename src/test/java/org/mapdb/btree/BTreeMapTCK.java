@@ -951,9 +951,9 @@ public abstract class BTreeMapTCK {
     }
 
     // =====================================================================
-    // NavigableMap / ConcurrentNavigableMap conformance (spec-btree-map A/D).
+    // NavigableMap / ConcurrentNavigableMap conformance.
     // Oracle = java.util.TreeMap and its navigable views. Runs across all
-    // store dialects. Assertions respect weak consistency (§ cost caveats).
+    // store dialects. Assertions respect weak consistency.
     // =====================================================================
 
     private BTreeMap<byte[], byte[]> byteArrayMap(int maxNodeSize) {
@@ -1158,7 +1158,7 @@ public abstract class BTreeMapTCK {
         assertEquals("every key drained exactly once", KEYS, seen.size());
     }
 
-    /** descendingMap: reversed iteration + the §D single-key mapping (oracle =
+    /** descendingMap: reversed iteration + the descending single-key mapping (oracle =
      *  TreeMap.descendingMap()); comparator non-null & reversed; double-descending == ascending;
      *  nested descending subMaps. */
     @Test
@@ -1166,7 +1166,7 @@ public abstract class BTreeMapTCK {
         TreeMap<Long, Long> oracle = new TreeMap<>();
         BTreeMap<Long, Long> m = sparseLongMap(8, 10L, 100, oracle); // 0,10,..,990
 
-        // §D mapping and reversed iteration, fully oracle-checked
+        // orientation mapping and reversed iteration, fully oracle-checked
         assertNavMatches(m.descendingMap(), oracle.descendingMap(), longNavProbes());
 
         // comparator: ascending is natural (null); descending is non-null and reversed

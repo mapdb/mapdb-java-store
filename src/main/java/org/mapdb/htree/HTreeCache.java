@@ -31,8 +31,8 @@ import java.util.function.LongSupplier;
 /**
  * HTreeMap-as-cache: the segmented hash tree with per-entry EXPIRATION (TTL and/or
  * max-size eviction). A self-contained sibling of the lean {@link HTreeMap}
- * (maintainer steer in spec-htreemap/NEXT.md: a separate collection, not feature
- * flags in the hot paths); {@link DirTree} is shared unchanged.
+ * (kept as a separate collection rather than feature flags in the hot paths);
+ * {@link DirTree} is shared unchanged.
  *
  * Structure on top of HTreeMap's segment/dir-tree layout:
  *  - buckets store TRIPLES {@code [key, value, queueNodeRecid]} (values inline);
@@ -126,7 +126,7 @@ import java.util.function.LongSupplier;
  *
  * Time comes from an injectable clock (test hook); production maps use
  * {@code System.currentTimeMillis}. Hashing, locking, iteration snapshots and the
- * one-live-mutable-handle contract are HTreeMap's (spec-htreemap §0.2–0.8).
+ * one-live-mutable-handle contract are HTreeMap's.
  */
 public final class HTreeCache<K, V> extends AbstractMap<K, V> implements MapExtra<K, V> {
 
@@ -273,7 +273,7 @@ public final class HTreeCache<K, V> extends AbstractMap<K, V> implements MapExtr
                                     long ttl, boolean accessOrder, long maxSize, long storeSize,
                                     long maxEvictPerOp) {
         // hard cap 12 (4096 segments): segments are lock granularity, more was measured
-        // as a cache-scatter regression (spec-htreemap STATUS.md reverted-experiments)
+        // as a cache-scatter regression
         if (concShift < 0 || concShift > 12)
             throw new IllegalArgumentException("concShift must be in [0,12]");
         if (dirShift < 1 || dirShift > DirTree.MAX_DIR_SHIFT)

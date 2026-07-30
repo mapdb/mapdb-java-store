@@ -54,11 +54,10 @@ import java.util.function.BiConsumer;
  * record → linear key scan. Only hashes live in the tree, so lookups never
  * deserialize foreign keys except within the terminal bucket.
  *
- * Hashing (spec-htreemap §0.2/§0.3): an external {@link Hasher} maps (key, persisted
- * seed) to fully-mixed hash bits — default {@link Hashers#objectHasher()} (seeded
- * fmix32 over hashCode), which requires keys whose hashCode/equals agree with
- * {@code keySer.equals} (Long, String, boxed primitives); byte[] keys need a content
- * hasher ({@link Hashers#mixing}).
+ * Hashing: an external {@link Hasher} maps (key, persisted seed) to fully-mixed hash bits
+ * — default {@link Hashers#objectHasher()} (seeded fmix32 over hashCode), which requires
+ * keys whose hashCode/equals agree with {@code keySer.equals} (Long, String, boxed
+ * primitives); byte[] keys need a content hasher ({@link Hashers#mixing}).
  *
  * Concurrency: get/iteration take the segment read lock, put the write lock; locks
  * are no-ops when {@code !store.isThreadSafe()}. Iteration drains one segment at a
@@ -127,7 +126,7 @@ public final class HTreeMap<K, V> extends AbstractMap<K, V> implements MapExtra<
 
     private static void checkConfig(int concShift, int dirShift, int levels) {
         // hard cap 12 (4096 segments): segments are lock granularity, more was measured
-        // as a cache-scatter regression (spec-htreemap STATUS.md reverted-experiments)
+        // as a cache-scatter regression
         if (concShift < 0 || concShift > 12)
             throw new IllegalArgumentException("concShift must be in [0,12]");
         if (dirShift < 1 || dirShift > DirTree.MAX_DIR_SHIFT)

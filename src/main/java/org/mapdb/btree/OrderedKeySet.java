@@ -8,8 +8,8 @@ import java.util.NavigableSet;
 import java.util.SortedSet;
 
 /**
- * {@link NavigableSet} key-view PROJECTION over an {@link OrderedNavigableView} (verdict
- * #6). Every navigation/mutation delegates to the backing map view and unwraps keys — no
+ * {@link NavigableSet} key-view PROJECTION over an {@link OrderedNavigableView}.
+ * Every navigation/mutation delegates to the backing map view and unwraps keys — no
  * traversal, ordering, or bound logic is duplicated. Iteration follows the view's
  * orientation (a descending view's key-set iterates descending); {@code iterator.remove()}
  * routes through the view's mutable entry-set. {@code add} is unsupported (a key alone

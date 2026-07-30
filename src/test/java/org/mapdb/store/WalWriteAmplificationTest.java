@@ -158,7 +158,7 @@ public class WalWriteAmplificationTest {
 
     /**
      * Store-level shapes, free of any collection: one record grown by small appends, the same
-     * record rewritten whole, and the design's §2.4 COLLAPSE case (a transaction that stages
+     * record rewritten whole, and the COLLAPSE case (a transaction that stages
      * both a base and appends degrades today to one full merged image). This isolates the
      * WAL's own behaviour from B-tree mechanics.
      */

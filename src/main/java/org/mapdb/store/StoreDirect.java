@@ -1177,7 +1177,7 @@ public class StoreDirect implements StoreDelta {
         }
     }
 
-    // ---------- incremental compaction (roadmap R8; spec-missing #3) ----------
+    // ---------- incremental compaction ----------
     //
     // Bounded, structure-aware relocation compactor: instead of rebuilding the WHOLE
     // store (as compact() does), compactStep() reclaims a bounded run of TRAILING DATA
@@ -1213,8 +1213,8 @@ public class StoreDirect implements StoreDelta {
     // one more page and retries; worst case it reclaims nothing and returns 0. A planning
     // bug therefore degrades to a no-op, never to corruption.
     //
-    // Compaction tail (roadmap R8, landed here): the drop region may now include INDEX pages and
-    // pages holding LINKED (oversize) chunks. Both are relocated with the same write-copy-then-flip
+    // Compaction tail: the drop region may also include INDEX pages and pages holding LINKED
+    // (oversize) chunks. Both are relocated with the same write-copy-then-flip
     // primitive folded into the plan->validate->write pipeline:
     //   * Index-page relocation (IndexPageMove): copy a whole 1 MiB page to a lower retained page
     //     that holds no live extent, rewrite the index-page chain links, publish the indexPages
@@ -1262,7 +1262,7 @@ public class StoreDirect implements StoreDelta {
     }
 
     /**
-     * A whole 1 MiB index page relocated to a lower page-aligned target (roadmap R8 tail).
+     * A whole 1 MiB index page relocated to a lower page-aligned target.
      * The move preserves the page's ordinal position (recids are unchanged: {@link #recidToOffset}
      * resolves by ordinal), copies all 65528/131070 slots plus the reserved header {@code [0..16)},
      * and re-links the index-page chain to the new offset. {@code newPage} is a whole retained

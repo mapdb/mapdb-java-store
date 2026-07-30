@@ -7,12 +7,12 @@ import java.util.Arrays;
 import java.util.Comparator;
 
 /**
- * Columnar value {@link GroupFormat} (spec-missing #10 / roadmap R7): stores a group of
- * fixed-arity records COLUMN-BY-COLUMN so that a scan over one column reads only that column's
- * contiguous bytes (Arrow-style, scan-friendly). This is a VALUE format — value groups are stored
- * in KEY order, not value-sorted — but it still exposes a coherent total order (lexicographic
- * across columns, column 0 most significant) so point {@link #get}, object-side {@link #search}
- * and byte-side {@link #binarySearch} all agree and it passes the {@link GroupFormat} TCK.
+ * Columnar value {@link GroupFormat}: stores a group of fixed-arity records COLUMN-BY-COLUMN so
+ * that a scan over one column reads only that column's contiguous bytes (Arrow-style,
+ * scan-friendly). This is a VALUE format — value groups are stored in KEY order, not value-sorted —
+ * but it still exposes a coherent total order (lexicographic across columns, column 0 most
+ * significant) so point {@link #get}, object-side {@link #search} and byte-side
+ * {@link #binarySearch} all agree and it passes the {@link GroupFormat} TCK.
  *
  * <h3>Columns</h3>
  * Each column is a FIXED-WIDTH integral primitive ({@link ColumnType}); the schema is fixed at
@@ -36,7 +36,7 @@ import java.util.Comparator;
  * <h3>Scans</h3>
  * {@link #columnCursor} walks one column's contiguous run — reading only {@code n*w_c} bytes, never
  * the whole {@code n*rowWidth} group (proven by a CountingInput test). {@link #rangeCursor} walks
- * whole rows. Both leave the input at group end on exhaustion (spec-missing #10).
+ * whole rows. Both leave the input at group end on exhaustion.
  */
 public final class ColumnarValueFormat implements GroupFormat<Object[]> {
 

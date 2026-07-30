@@ -370,7 +370,7 @@ public abstract class GroupFormatTCK<A> {
         }
     }
 
-    // ==== byte side: range cursor (spec-missing #10) ==========================
+    // ==== byte side: range cursor =============================================
 
     /** Ranges to exercise for a group of size n: full, prefix, suffix, single, empty, tail-empty. */
     private int[][] cursorRanges(int n) {

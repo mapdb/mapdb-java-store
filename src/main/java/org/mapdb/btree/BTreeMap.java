@@ -86,8 +86,9 @@ import java.util.function.BiConsumer;
  *    stripe order) then deadlocks — including self-deadlock when parent and child
  *    collide on a stripe. Reentrant locks are equally banned: reentrancy MASKS
  *    aliasing and wrong-direction overlap instead of failing fast at the
- *    acquisition point (see docs/history/spinlock-study/ and the reentrant modulo
- *    stripe arrays of the historical mapdb store layer).
+ *    acquisition point — the failure mode of the reentrant modulo-stripe lock
+ *    arrays in the historical mapdb store layer, where an aliased or upward
+ *    acquisition succeeds silently and surfaces only later as a deadlock.
  *  - a root split locks the root-pointer recid only; concurrent writers ascending
  *    past a level whose parent does not exist yet park in {@code leftEdge} (the
  *    per-level left-edge recids — stable: splits keep the left half's recid). A
@@ -106,7 +107,7 @@ import java.util.function.BiConsumer;
  *
  * <h2>Map interfaces</h2>
  *
- * Implements {@link ConcurrentNavigableMap} (spec-btree-map iface) — i.e. ConcurrentMap +
+ * Implements {@link ConcurrentNavigableMap} — i.e. ConcurrentMap +
  * NavigableMap + SortedMap. Weakly-consistent collection views (entrySet/keySet/values)
  * backed by leaf-link iteration; {@code iterator.remove()} routes the last key to
  * {@link #remove(Object)}. The full navigable surface (lower/floor/ceiling/higher,
@@ -204,17 +205,19 @@ public class BTreeMap<K, V> extends AbstractMap<K, V>
      * three overlapping locks per writer (future top-down Sagiv compression), so the
      * table must never alias two recids to one lock (no striping) and the locks must not
      * be reentrant — either would mask a wrong-direction or aliased acquisition instead
-     * of failing fast. Deadlock-freedom proof: docs/research/btree-deadlock-freedom.md.
+     * of failing fast. Deadlock freedom of the ops implemented here follows from the
+     * acquisition rule rather than from the lock count: a writer only ever blocks acquiring
+     * a lock while holding none, so it can never be an edge in a wait-for cycle (a future
+     * multi-lock op must instead rely on the ranked top-down/rightward order above).
      * Node locks nest OUTSIDE store locks (store calls happen under a node lock,
      * never the reverse). The root-pointer recid is lockable here too (root splits).
      */
     private final ConcurrentHashMap<Long, Thread> nodeLocks = new ConcurrentHashMap<>();
 
     /**
-     * Structural-failure backstop (parity with rust r2/r3 and zig; see
-     * docs/research/btree-deadlock-freedom.md §6). Set when a split's separator
-     * propagation — or a root grow — fails AFTER the split was already published: the
-     * tree is then searchable via links but a level a later writer expects may never be
+     * Structural-failure backstop (parity with the Rust and Zig ports). Set when a split's
+     * separator propagation — or a root grow — fails AFTER the split was already published:
+     * the tree is then searchable via links but a level a later writer expects may never be
      * created, so a writer could park forever in {@link #leftEdge}. Every op entry
      * ({@link #rootRecid}) and the {@link #leftEdge} park loop read this O(1) volatile
      * and fail fast with {@link org.mapdb.DBException.DataCorruption} instead. A poisoned
@@ -701,12 +704,12 @@ public class BTreeMap<K, V> extends AbstractMap<K, V>
     // ================= node locks =================
 
     /**
-     * -ea-only zero-held checker (task 4c; sibling of {@link org.mapdb.store.DeadlockAsserts}).
+     * -ea-only zero-held checker (sibling of {@link org.mapdb.store.DeadlockAsserts}).
      * The recids THIS thread currently holds in THIS map — enforcing the protocol invariant
      * that a node-lock acquisition happens while this thread holds NO node lock of this map
      * (the current 1-lock protocol; becomes a ranked-order assert when a multi-lock op lands).
      * Populated only under {@code assert} so it is JIT-eliminated and zero-cost with
-     * assertions off. See docs/research/btree-deadlock-freedom.md §6.
+     * assertions off.
      */
     private final ThreadLocal<ArrayDeque<Long>> heldNodeLocks =
             ThreadLocal.withInitial(ArrayDeque::new);
@@ -1636,14 +1639,13 @@ public class BTreeMap<K, V> extends AbstractMap<K, V>
 
     /**
      * Bounded DESCENDING entry iterator over {@code [lo,hi]} (null bound = open), weakly
-     * consistent. FIRST CUT (spec-btree-map item B3): materialize the bounded ascending
-     * range and iterate it reversed — O(range) memory, reuses the tested ascending
-     * iterator. The long-term impl (per-leaf buffering + re-descend to the predecessor
-     * leaf, O(maxLeafEntries) memory) is scoped out. Used ONLY for actual reverse
-     * ITERATION (descending views / descendingKeySet); single-entry predecessor queries
-     * (floor/lower/lastEntry) go through the shared view's O(1)-memory ascending
-     * scan-keep-last instead, and {@link #pollLastEntry} picks its candidate the same way,
-     * so neither materializes the range.
+     * consistent. FIRST CUT: materialize the bounded ascending range and iterate it reversed
+     * — O(range) memory, reuses the tested ascending iterator. The long-term impl (per-leaf
+     * buffering + re-descend to the predecessor leaf, O(maxLeafEntries) memory) is scoped
+     * out. Used ONLY for actual reverse ITERATION (descending views / descendingKeySet);
+     * single-entry predecessor queries (floor/lower/lastEntry) go through the shared view's
+     * O(1)-memory ascending scan-keep-last instead, and {@link #pollLastEntry} picks its
+     * candidate the same way, so neither materializes the range.
      */
     Iterator<Map.Entry<K, V>> descendingEntryIterator(K lo, boolean loInc, K hi, boolean hiInc) {
         ArrayList<Map.Entry<K, V>> buf = new ArrayList<>();
@@ -1659,15 +1661,14 @@ public class BTreeMap<K, V> extends AbstractMap<K, V>
     }
 
     /**
-     * Atomically remove and return the LEAST in-range entry, or null when empty
-     * (spec-btree-map item B4, correctness risk #1). Retry loop: pick the first ascending
-     * in-range key as an ADVISORY candidate, then {@code removeInternal(k, v)} — an atomic
-     * conditional remove that succeeds only if the live value still equals {@code v}. On
-     * failure (value changed / key gone) retry with a fresh least candidate. The successful
-     * conditional remove is the mutation point, so poll never removes a value it did not
-     * return; the "least in range" selection is weakly consistent, exactly like the
-     * iterators (a smaller key inserted concurrently between the read and the remove may be
-     * missed — see class javadoc). Returns an immutable snapshot.
+     * Atomically remove and return the LEAST in-range entry, or null when empty. Retry loop:
+     * pick the first ascending in-range key as an ADVISORY candidate, then
+     * {@code removeInternal(k, v)} — an atomic conditional remove that succeeds only if the
+     * live value still equals {@code v}. On failure (value changed / key gone) retry with a
+     * fresh least candidate. The successful conditional remove is the mutation point, so poll
+     * never removes a value it did not return; the "least in range" selection is weakly
+     * consistent, exactly like the iterators (a smaller key inserted concurrently between the
+     * read and the remove may be missed — see class javadoc). Returns an immutable snapshot.
      */
     Map.Entry<K, V> pollFirstEntry(K lo, boolean loInc, K hi, boolean hiInc) {
         for (;;) {
@@ -1726,7 +1727,7 @@ public class BTreeMap<K, V> extends AbstractMap<K, V>
         return count;
     }
 
-    // ================= columnar single-column scan (spec-missing #10 / R7) =================
+    // ================= columnar single-column scan =================
 
     /**
      * Scan ONE value column over the ascending key range {@code [fromKey, toKey]} (a null bound is
@@ -1931,8 +1932,9 @@ public class BTreeMap<K, V> extends AbstractMap<K, V>
     /**
      * Cached open-bounds ascending {@link ConcurrentOrderedNavigableView} that backs the
      * whole navigable surface (nav queries, sub-maps, key-sets, descending map). Immutable
-     * and stateless beyond the adapter, so one instance is reused; navigation is not the
-     * hot path (spec-btree-map: navigation may be slower, the write path is unchanged).
+     * and stateless beyond the adapter, so one instance is reused. Navigation is not the
+     * hot path, so a slower navigable surface is an acceptable trade for leaving the
+     * write path unchanged.
      */
     private volatile ConcurrentOrderedNavigableView<K, V> fullView;
 

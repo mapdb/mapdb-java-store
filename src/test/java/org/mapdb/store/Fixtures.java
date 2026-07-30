@@ -15,8 +15,8 @@ import java.util.Arrays;
  * (base ++ deltas). mapdb5's {@code Serializers.BYTE_ARRAY}
  * is self-delimiting (length-prefixed) so it hides the appended region — it is
  * the wrong tool for merged-content assertions. RAW is the mapdb3
- * {@code BYTE_ARRAY_NOSIZE} analogue the spec's "merged logical value" wording
- * implies.
+ * {@code BYTE_ARRAY_NOSIZE} analogue that the delta contract's merged-logical-value
+ * semantics imply.
  */
 final class Fixtures {
 

@@ -20,8 +20,8 @@ import java.util.NoSuchElementException;
 import java.util.Set;
 
 /**
- * Immutable, read-only, bulk-built sorted map over a Store4 {@link Store} (spec-missing #6;
- * the Store4 evolution of mapdb3's {@code SortedTableMap}). Built ONCE from a STRICTLY
+ * Immutable, read-only, bulk-built sorted map over a Store4 {@link Store} (the Store4
+ * evolution of mapdb3's {@code SortedTableMap}). Built ONCE from a STRICTLY
  * ASCENDING stream via a {@link Sink}; afterwards no key may be inserted, removed or
  * replaced — every mutating {@link Map}/{@link NavigableMap} method throws
  * {@link UnsupportedOperationException}.

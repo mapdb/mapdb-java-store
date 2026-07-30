@@ -26,7 +26,8 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 /**
- * Lock-protocol hardening tests (deadlock-freedom proof: docs/research/btree-deadlock-freedom.md).
+ * Lock-protocol hardening tests. Deadlock freedom rests on a writer only ever acquiring a node
+ * lock while holding none, so it never blocks while holding; these tests pin that discipline.
  * Run with {@code -ea} (the surefire default here), so the zero-held node-lock checker in
  * {@link BTreeMap#lockNode} is active: these are the cases that would catch an overlap-discipline
  * bug (striped-table aliasing) or an exception-path lock leak. Three concerns:

@@ -618,13 +618,13 @@ public final class BufferedPageFormat<K, V> {
     }
 
     /**
-     * Format-layer LEAF consolidation ({@code design} §Consolidation). Folds
-     * the newest visible op per key into a fresh key/value group pair — retention = newest op per
-     * key, tombstones drop (no R3 snapshots). Returns a {@link Consolidated} carrying the merged
-     * GROUPS (NOT node bytes: this primitive is base-shape agnostic — the consumer owns node
-     * flags/link/header framing, so it composes the returned groups into its own base image).
-     * When the projected key count exceeds {@code maxBaseKeys} it returns {@code splitRequired}
-     * — the terminal P6 "split me" outcome, never a livelock.
+     * Format-layer LEAF consolidation. Folds the newest visible op per key into a fresh
+     * key/value group pair — retention = newest op per key, tombstones drop (no R3 snapshots).
+     * Returns a {@link Consolidated} carrying the merged GROUPS (NOT node bytes: this primitive
+     * is base-shape agnostic — the consumer owns node flags/link/header framing, so it composes
+     * the returned groups into its own base image). When the projected key count exceeds
+     * {@code maxBaseKeys} it returns {@code splitRequired} — the terminal P6 "split me"
+     * outcome, never a livelock.
      *
      * <p>Only for key/value (leaf) pages: a directory base carries child recids, not values, so
      * merging keyed PUT/DELETE ops into it is nonsensical (that consolidation is the tree's job).

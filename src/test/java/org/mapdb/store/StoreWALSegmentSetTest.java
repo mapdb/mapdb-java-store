@@ -1100,8 +1100,8 @@ public class StoreWALSegmentSetTest {
     // ================= a hostile namespace =================
     //
     // Sequence numbers are attacker-visible 16-hex file names, and nothing in this suite used to
-    // feed recovery a doctored one. That is how an O(numeric gap) walk survived two review rounds:
-    // it was correct on every image a writer produces, and every image the tests built was one.
+    // feed recovery a doctored one. That is how an O(numeric gap) walk survived unnoticed for so
+    // long: it was correct on every image a writer produces, and every image the tests built was one.
 
     /**
      * A wildly high sequence number must cost recovery nothing beyond the file

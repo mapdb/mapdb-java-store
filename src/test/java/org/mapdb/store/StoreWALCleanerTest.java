@@ -440,13 +440,13 @@ public class StoreWALCleanerTest {
     /**
      * <b>A commit pays ONE bounded slice, and the bound has to be small enough to be one.</b>
      *
-     * <p>Step 4's measurement found the {@code FOREGROUND_BUDGET} constant set to
+     * <p>Measurement found the {@code FOREGROUND_BUDGET} constant set to
      * {@code (4096 records, 8 MiB, maxNanos = 0)} — a "bound" larger than the whole log on the
-     * benchmark, with the time field, the one that names the quantity step 3 exists to bound,
+     * benchmark, with the time field, the one that names the quantity the budget exists to bound,
      * switched off entirely. The incremental cleaner was consequently <em>worse</em> on every
      * pause percentile than the whole-store checkpoint it replaced: 326 commits over 1 ms against
-     * the checkpoint's 70, on a 350k-commit run. Six review rounds went past it because it is a
-     * value, not a rule.
+     * the checkpoint's 70, on a 350k-commit run. That went unnoticed for a long time because it is
+     * a value, not a rule.
      *
      * <p>This pins the byte half <b>deterministically</b>, by sampling {@link
      * StoreWAL#cleanerBytesWritten()} around each commit rather than by timing anything — a

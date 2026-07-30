@@ -5,20 +5,20 @@ import java.util.Iterator;
 import java.util.Map;
 
 /**
- * Narrow bridge between an ordered map ({@link BTreeMap}, {@link BufferTreeMap}) and
- * the shared range/navigation view layer ({@link OrderedNavigableView} and the
- * {@link OrderedKeySet} projection). Deliberately small (spec-btree-map item A): it
- * exposes only the ordering, the point mutators, BOUNDED ascending/descending iterators,
- * atomic bounded poll and a bounded count — the two maps keep their own traversal
- * internals (BTree scans linked leaves; BufferTree does a DFS with LWW/tombstone
- * op-merge), which must NOT be coupled behind this interface.
+ * Narrow bridge between an ordered map ({@link BTreeMap}, {@link BufferTreeMap}) and the
+ * shared range/navigation view layer ({@link OrderedNavigableView} and the
+ * {@link OrderedKeySet} projection). Deliberately small: it exposes only the ordering, the
+ * point mutators, BOUNDED ascending/descending iterators, atomic bounded poll and a bounded
+ * count — the two maps keep their own traversal internals (BTree scans linked leaves;
+ * BufferTree does a DFS with LWW/tombstone op-merge), which must NOT be coupled behind this
+ * interface.
  *
  * <p>Bounds are passed as nullable keys: a {@code null} lower/upper bound means
  * unbounded on that side (null keys are rejected by the maps, so {@code null} is an
  * unambiguous "no bound" sentinel). {@code loInc}/{@code hiInc} select inclusivity.
  * All iterators/poll take bounds in the map's NATURAL (ascending) key order regardless
  * of the calling view's orientation — the view maps descending semantics onto these
- * ascending-order primitives (spec-btree-map §D).
+ * ascending-order primitives.
  *
  * <p>Only the CONCURRENT sub-surface (putIfAbsent/replace) lives in the
  * {@link ConcurrentOrderedMapAdapter} refinement, so a non-concurrent map
@@ -58,9 +58,9 @@ public interface OrderedMapAdapter<K, V> {
     /**
      * Atomically remove and return the LEAST in-range entry, or null when the range is
      * empty. Backing (ascending) orientation: a descending view maps its
-     * {@code pollFirstEntry} onto {@link #pollLastEntry} (spec-btree-map §D). The
-     * returned entry is an immutable snapshot; the removed value equals the returned
-     * value (never removes a value it did not return).
+     * {@code pollFirstEntry} onto {@link #pollLastEntry}. The returned entry is an immutable
+     * snapshot; the removed value equals the returned value (never removes a value it did
+     * not return).
      */
     Map.Entry<K, V> pollFirstEntry(K lo, boolean loInc, K hi, boolean hiInc);
 

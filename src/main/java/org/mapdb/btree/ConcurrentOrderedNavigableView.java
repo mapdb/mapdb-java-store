@@ -4,11 +4,10 @@ import java.util.concurrent.ConcurrentNavigableMap;
 
 /**
  * {@link ConcurrentNavigableMap} refinement of {@link OrderedNavigableView} for
- * {@link BTreeMap} and its sub-views (verdict #9: BTree's sub-views must ALSO be
- * {@code ConcurrentNavigableMap}, not plain {@code NavigableMap}). Java cannot make a
- * single class conditionally implement {@code ConcurrentNavigableMap}, so this thin
- * subclass adds the marker + the atomic CAS surface while reusing every navigation,
- * bound-algebra and orientation method from the base.
+ * {@link BTreeMap} and its sub-views, which must ALSO be {@code ConcurrentNavigableMap}, not
+ * plain {@code NavigableMap}. Java cannot make a single class conditionally implement
+ * {@code ConcurrentNavigableMap}, so this thin subclass adds the marker + the atomic CAS
+ * surface while reusing every navigation, bound-algebra and orientation method from the base.
  *
  * <p>{@link #newView} is overridden to produce concurrent sub-views, so nested
  * {@code subMap}/{@code headMap}/{@code tailMap}/{@code descendingMap} — reached even

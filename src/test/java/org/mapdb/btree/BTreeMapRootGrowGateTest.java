@@ -12,8 +12,8 @@ import java.lang.reflect.Field;
 import static org.junit.Assert.assertEquals;
 
 /**
- * Root-growth identity gate (fix 1; parity with rust
- * {@code crafted_fake_root_descendant_does_not_replace_root} and the zig
+ * Root-growth identity gate (parity with the Rust
+ * {@code crafted_fake_root_descendant_does_not_replace_root} and the Zig
  * "crafted: fake root descendant does not replace root" test).
  *
  * <p>A checksum-valid node falsely flagged {@code LEFT|RIGHT} (root shape) must NOT be

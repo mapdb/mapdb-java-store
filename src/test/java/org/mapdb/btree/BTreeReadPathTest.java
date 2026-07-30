@@ -48,7 +48,7 @@ public class BTreeReadPathTest {
      * A map.get() must drive node traversal exclusively through read() (push-down);
      * it must never deserialize a node via store.get. The single get() the read path
      * DOES issue is the root-pointer indirection (a plain Long, serializer == LONG),
-     * which by spec (P2: get is the slow path, allowed off the node hot-path) is not
+     * which (P2: get is the slow path, allowed off the node hot-path) is not
      * a node materialization — the decorator excludes it. The put path may use
      * store.get freely and is not measured.
      */

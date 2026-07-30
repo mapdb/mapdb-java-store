@@ -14,16 +14,16 @@ import java.util.Set;
 import java.util.SortedMap;
 
 /**
- * Shared, fully-bounded, live {@link NavigableMap} view over an {@link OrderedMapAdapter}
- * (spec-btree-map items A/D). Used both for the {@code headMap}/{@code tailMap}/
- * {@code subMap}/{@code descendingMap} sub-views of {@link BTreeMap}/{@link BufferTreeMap}
- * AND — with open bounds — as the backing entry/key views of the maps themselves, so all
- * range + navigation logic lives in exactly one place (verdict #7).
+ * Shared, fully-bounded, live {@link NavigableMap} view over an {@link OrderedMapAdapter}.
+ * Used both for the {@code headMap}/{@code tailMap}/{@code subMap}/{@code descendingMap}
+ * sub-views of {@link BTreeMap}/{@link BufferTreeMap} AND — with open bounds — as the backing
+ * entry/key views of the maps themselves, so all range + navigation logic lives in exactly
+ * one place.
  *
  * <h2>Orientation</h2>
  * A {@code descending} flag reverses the view WITHOUT touching the backing key interval:
  * it flips {@link #comparator()}, the iteration direction, and the sense of every
- * navigational method per the spec §D mapping table (e.g. a descending {@code firstEntry}
+ * navigational method, as mapped below (e.g. a descending {@code firstEntry}
  * is the backing GREATEST in range; {@code pollFirstEntry} maps to the backing
  * {@code pollLastEntry}; descending {@code headMap(to)} selects backing keys {@code > to}).
  * {@link #descendingMap()} merely flips the flag, so
@@ -177,7 +177,7 @@ public class OrderedNavigableView<K, V> extends AbstractMap<K, V> implements Nav
 
     private static void requireKey(Object k) { if (k == null) throw new NullPointerException(); }
 
-    // ---- NavigableMap: entry navigation (orientation-mapped, spec §D) ----
+    // ---- NavigableMap: entry navigation (orientation-mapped) ----
 
     @Override public Map.Entry<K, V> firstEntry() { return snap(descending ? backingLast() : backingFirst()); }
     @Override public Map.Entry<K, V> lastEntry()  { return snap(descending ? backingFirst() : backingLast()); }
@@ -340,7 +340,7 @@ public class OrderedNavigableView<K, V> extends AbstractMap<K, V> implements Nav
     OrderedNavigableView<K, V> descendingView() { return newView(lo, loInc, hi, hiInc, !descending); }
 
     /** Build a sub-view: for each side either inherit the parent bound or check + intersect
-     *  an argument bound. Callers pick which arg maps to lo/hi per orientation (spec §D). */
+     *  an argument bound. Callers pick which arg maps to lo/hi per orientation. */
     private OrderedNavigableView<K, V> makeSub(boolean loFromArg, K loArg, boolean loArgInc,
                                                boolean hiFromArg, K hiArg, boolean hiArgInc) {
         K nLo = lo; boolean nLoInc = loInc;

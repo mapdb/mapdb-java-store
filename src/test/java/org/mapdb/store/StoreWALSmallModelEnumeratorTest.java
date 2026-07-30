@@ -26,9 +26,9 @@ import static org.junit.Assert.fail;
  * truth, and §4.2 establishes that a commit-time cross-check of it would be circular (the
  * only value the apply path could compare against is the very table the stamp was read
  * from). Byte-exact writer fixtures catch a PORT diverging from Java; they cannot catch Java
- * itself stamping a wrong base. Enumeration can. Every counterexample found in the four
- * redesign review rounds lives at depth ≤ 5 over ≤ 3 recids, and three adversarial rounds
- * did not exhaust the table by inspection — so the evidence has to be mechanical.
+ * itself stamping a wrong base. Enumeration can. Every counterexample found so far lives at
+ * depth ≤ 5 over ≤ 3 recids, and manual inspection never exhausted the transition table —
+ * so the evidence has to be mechanical.
  *
  * <p><b>What this covers:</b> {@code put}, {@code update}, {@code update-to-null},
  * {@code append}, a rejected {@code append} (bad arguments — the transaction must be

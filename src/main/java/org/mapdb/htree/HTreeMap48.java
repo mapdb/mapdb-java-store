@@ -29,7 +29,7 @@ import java.util.function.BiConsumer;
  * {@link HTreeMap} variant with a 48-BIT hash budget — for maps whose index space
  * outgrows the 32-bit partition (the 32-bit map saturates around 10^9 entries:
  * buckets then grow linearly and lookups degrade to scans). A self-contained
- * duplicate of the lean HTreeMap (maintainer steer: separate classes over flags in
+ * duplicate of the lean HTreeMap (kept as a separate class rather than feature flags in
  * the hot paths); {@link DirTree} runs on long indices already and is shared
  * unchanged.
  *
@@ -53,9 +53,9 @@ import java.util.function.BiConsumer;
  * extra levels materialize only when entries genuinely collide that deep.
  *
  * Everything else — locking, torn-read discipline, iteration snapshots, persistence,
- * the one-live-mutable-handle contract — is HTreeMap's (spec-htreemap §0.2–0.8);
- * see its javadoc. The header is NOT interchangeable with HTreeMap's (long seed,
- * different budget); a headerRecid belongs to exactly one of the two classes.
+ * the one-live-mutable-handle contract — is HTreeMap's; see its javadoc. The header is NOT
+ * interchangeable with HTreeMap's (long seed, different budget); a headerRecid belongs to
+ * exactly one of the two classes.
  *
  * Implements {@link java.util.Map} and {@link java.util.concurrent.ConcurrentMap}
  * with the same weak-consistency and {@link #size} saturation caveats as

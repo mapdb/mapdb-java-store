@@ -533,7 +533,7 @@ public class BufferTreeMap<K, V> extends AbstractMap<K, V> implements Concurrent
     /**
      * Blind upsert — the PRIMARY, unchanged hot path: appends a PUT message into the
      * root buffer without reading the old value (one append, no node materialization —
-     * the whole point of the structure, spec-btree-map item C1).
+     * the whole point of the structure).
      */
     public void putOnly(K key, V value) {
         if (key == null || value == null) throw new NullPointerException();
@@ -548,7 +548,7 @@ public class BufferTreeMap<K, V> extends AbstractMap<K, V> implements Concurrent
     /**
      * Blind delete — unchanged hot path: appends a TOMBSTONE message. Truly blind (no
      * read), so it stays void; making it boolean would force a lookup and defeat the
-     * optimization (verdict #6).
+     * optimization.
      */
     public void removeOnly(K key) {
         if (key == null) throw new NullPointerException();
@@ -869,7 +869,7 @@ public class BufferTreeMap<K, V> extends AbstractMap<K, V> implements Concurrent
 
         // net effect per key: ops are oldest-first, so later put() overwrites earlier.
         // Compare via keyFormat (not keyElem) so the merge order can never diverge from
-        // the tree/search order (spec-btree-map item A: one coherent order).
+        // the tree/search order: there is exactly one coherent order.
         java.util.TreeMap<K, Op> net = new java.util.TreeMap<>(keyFormat::compare);
         for (Op op : ops) net.put(op.key, op);
 
@@ -1254,7 +1254,7 @@ public class BufferTreeMap<K, V> extends AbstractMap<K, V> implements Concurrent
      *     leaf and the key/value formats support binary access, the range is answered entirely on
      *     page bytes via {@link BufferedPageFormat}: a byte-side base cursor over only the in-range
      *     base slice ({@code binarySearch}+{@code binaryGet}, never the whole group) merged with the
-     *     bounded log shadow. This is the design's "warm range scan, no base materialization" primitive.</li>
+     *     bounded log shadow — a warm range scan with no base materialization.</li>
      * <li><b>Multi-level (pruned DFS):</b> descend ONLY children whose routing band covers
      *     {@code [lo,hi]} (derived by the SAME inclusive-separator routing as point get, so equality
      *     on a separator is handled identically), range-filter inherited ops BEFORE partition, and
@@ -1403,10 +1403,10 @@ public class BufferTreeMap<K, V> extends AbstractMap<K, V> implements Concurrent
     }
 
     /**
-     * Single-page (root-is-leaf) byte-side range read: the design's warm range cursor with NO base
+     * Single-page (root-is-leaf) byte-side range read: a warm range cursor with NO base
      * materialization — merges a byte-side base cursor over only the in-range base slice with the
-     * bounded log shadow. Returns null when the root is a directory (fall
-     * back to the pruned DFS) or when a format lacks binary access (must materialize the base).
+     * bounded log shadow. Returns null when the root is a directory (fall back to the pruned DFS)
+     * or when a format lacks binary access (must materialize the base).
      */
     private List<Map.Entry<K, V>> tryByteRangeSingleLeaf(K lo, boolean loInc, K hi, boolean hiInc,
                                                          boolean descending) {
@@ -1529,8 +1529,8 @@ public class BufferTreeMap<K, V> extends AbstractMap<K, V> implements Concurrent
     }
 
     /**
-     * NATIVE reverse DFS (spec-btree-map item C1): the mirror of {@link #entryIterator()} —
-     * children visited RIGHT→LEFT, each leaf materialized by {@code applyOps} then emitted
+     * NATIVE reverse DFS: the mirror of {@link #entryIterator()} — children visited
+     * RIGHT→LEFT, each leaf materialized by {@code applyOps} then emitted
      * high→low, ancestor buffer ops partitioned per child exactly as in the ascending DFS.
      * Strictly DESCENDING key order with un-flushed buffers included; weakly consistent.
      */
@@ -1607,14 +1607,13 @@ public class BufferTreeMap<K, V> extends AbstractMap<K, V> implements Concurrent
     }
 
     /**
-     * Atomically remove and return the LEAST in-range entry, or null when empty
-     * (spec-btree-map item C2). Single-writer: under the writeLock, find the first live
-     * in-range entry, extract its key/value, DISCARD the iterator, then append a PRIVATE
-     * tombstone ({@code appendMessage(k, null)}, not the public {@code remove}) — the
-     * tombstone/flush never runs while a cursor is live. No retry
-     * loop is needed: the whole find-and-tombstone is one writer-lock critical section, so
-     * it is atomic on the returned entry (never removes a value it did not return); which
-     * entry is least/greatest is weakly consistent, as everywhere here.
+     * Atomically remove and return the LEAST in-range entry, or null when empty. Single-writer:
+     * under the writeLock, find the first live in-range entry, extract its key/value, DISCARD
+     * the iterator, then append a PRIVATE tombstone ({@code appendMessage(k, null)}, not the
+     * public {@code remove}) — the tombstone/flush never runs while a cursor is live. No retry
+     * loop is needed: the whole find-and-tombstone is one writer-lock critical section, so it
+     * is atomic on the returned entry (never removes a value it did not return); which entry is
+     * least/greatest is weakly consistent, as everywhere here.
      */
     Map.Entry<K, V> pollFirstEntry(K lo, boolean loInc, K hi, boolean hiInc) {
         writeLock.lock();

@@ -23,7 +23,7 @@ import java.util.Arrays;
  * slot lazily splits it into a sub-dir chain until the two indices diverge
  * ({@link #treePutSub}), so the tree stays shallow for few keys yet never rehashes.
  *
- * Level convention (spec-htreemap §0.1): {@code levels} = the number of directory
+ * Level convention: {@code levels} = the number of directory
  * layers; callers pass {@code rootLevel = levels - 1}; an index occupies exactly
  * {@code levels*dirShift} bits. Level L consumes index bits
  * {@code [L*dirShift, (L+1)*dirShift)}.

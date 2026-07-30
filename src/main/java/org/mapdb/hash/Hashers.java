@@ -19,7 +19,7 @@ public final class Hashers {
 
     // ================= finalizers =================
 
-    /** murmur3 fmix32: full avalanche over 32 bits (spec-htreemap §0.3). */
+    /** murmur3 fmix32: full avalanche over 32 bits. */
     public static int fmix32(int h) {
         h ^= h >>> 16;
         h *= 0x85ebca6b;

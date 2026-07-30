@@ -156,13 +156,13 @@ public class StoreWAL implements StoreDelta, StoreTx {
      * cleaning to completion inline, which is what keeps a store with no maintenance thread
      * bounded.
      *
-     * <p><b>These numbers are the deliverable, not a detail — step 4 measured that.</b> This was
+     * <p><b>These numbers are the deliverable, not a detail — measurement showed it.</b> This was
      * {@code (4096 records, 8 MiB, maxNanos = 0)}, and every part of that was wrong for what the
      * budget is for. 8 MiB is not a bound on a store whose whole log is 8 MiB, 4096 records is
      * more than a retiring segment usually holds, and {@code maxNanos = 0} means <em>no time
-     * bound at all</em> — so the field that names the quantity step 3 exists to bound was the one
-     * field switched off. Six review rounds went past it, because it is a value rather than a
-     * rule and nothing in the code reads wrong.
+     * bound at all</em> — so the one field that names the quantity this budget exists to bound
+     * was the field switched off. That went unnoticed for a long time, because it is a value
+     * rather than a rule and nothing in the code reads wrong.
      *
      * <p>Measured on the store-size sweep in {@code WalPauseTest} (tmpfs, maintenance off, 1 op/tx,
      * 320k entries / 350k commits), old budget → new: commits over 1 ms <b>326 → 1</b>, p99.9
@@ -1525,7 +1525,7 @@ public class StoreWAL implements StoreDelta, StoreTx {
      * <p>Every frame written by every encoder append in one transaction carries the SAME
      * LSN — the one the transaction's commit section will carry. That is deliberate: R3
      * then sees whole committed transactions rather than an arbitrary prefix of one, and
-     * ties inside a page break on append position, exactly as R1 specifies.
+     * ties inside a page break on append position.
      */
     @Override public long append(long recid, StoreDelta.DeltaEncoder enc) {
         rw.writeLock().lock();
