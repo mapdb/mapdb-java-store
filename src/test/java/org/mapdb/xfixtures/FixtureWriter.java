@@ -6,6 +6,7 @@ import org.mapdb.io.DataOutput2;
 import org.mapdb.ser.Serializer;
 import org.mapdb.store.Store;
 import org.mapdb.store.StoreDirect;
+import org.mapdb.store.StoreWAL;
 
 import java.io.File;
 import java.io.IOException;
@@ -22,7 +23,8 @@ import java.util.Set;
 import java.util.TreeSet;
 
 /**
- * Cross-port conformance fixture generator (Stage 1, the "D" StoreDirect workload).
+ * Cross-port conformance fixture generator (Stage 1 "D" StoreDirect workload; Stage 2 adds the
+ * {@code reject-wal-java-v3.walseg} segment fixture).
  *
  * <p>The fixtures written here pin the CURRENT state of an UNSTABLE format so that silent
  * divergence between the store engines is detected. Cross-engine openability today is an
@@ -32,9 +34,9 @@ import java.util.TreeSet;
  * <p>Runs the deterministic D workload from the Stage-1 implementation contract against a
  * file-backed {@link StoreDirect} through the PUBLIC Store API only, self-checks the result
  * (reopen + full reader contract, plus a raw-bytes decode of the E&rarr;G extent-reuse
- * invariant), and writes {@code direct-v1-java.db} and a {@code fragment.tsv} carrying this
- * fixture's manifest rows. Compression and manifest assembly are the sync script's job,
- * not this generator's.
+ * invariant), and writes {@code direct-v1-java.db}, {@code reject-wal-java-v3.walseg} (see
+ * {@link #writeWalSegFixture}) and a {@code fragment.tsv} carrying these fixtures' manifest
+ * rows. Compression and manifest assembly are the sync script's job, not this generator's.
  *
  * <p>Run from the repo root (no exec plugin in the POM; junit is deliberately NOT on this
  * classpath, so this class uses no junit assertions):
@@ -52,6 +54,15 @@ public final class FixtureWriter {
 
     static final String FIXTURE_ID = "direct-v1-java";
     static final String DB_FILE = "direct-v1-java.db";
+
+    // Stage 2: a real Java v3 WAL segment, published so the PORTS can pin their explicit version
+    // rejection (matching magic + version 3 fails their v1 check directly; the framed-MDB guard is
+    // not reached). Java itself has no expect row for it in the synced manifest — its reject-wal
+    // rows use port v1 files.
+    static final String WALSEG_FIXTURE_ID = "reject-wal-java-v3";
+    static final String WALSEG_FILE = "reject-wal-java-v3.walseg";
+    /** Scratch directory (under {@code --out}) the throwaway StoreWAL namespace lives in. */
+    static final String WALSEG_SCRATCH = "walseg-scratch";
 
     /** Exactly the first payload length that forces the linked-record path (MAX_CAPACITY - 4 + 1). */
     static final int F_LEN = 1_048_525;
@@ -298,10 +309,53 @@ public final class FixtureWriter {
                 "self-check reopen changed the published file bytes");
     }
 
+    // ---------- Stage 2: the reject-wal-java-v3 segment ----------
+
+    /**
+     * Emits {@code reject-wal-java-v3.walseg}: one committed transaction ({@code put(payload(51,
+     * 100))}) through a throwaway {@link StoreWAL} at a scratch base under {@code --out}, closed
+     * cleanly. The single resulting segment file {@code <base>.wal.<16hex>} is MOVED to the
+     * published name and every other scratch artifact is removed, so {@code --out} ends up holding
+     * exactly the published files plus {@code fragment.tsv}. Aborts if the close left more than
+     * one segment — the fixture must be a single segment.
+     *
+     * <p>Deterministic by construction: the segment header is magic|version|flags=0|seq|firstLsn|
+     * CRC-32 and the section bytes carry only LSNs, recids and the payload function — no
+     * timestamps, no randomness (verified by the sync script's two-run byte compare).
+     */
+    private static void writeWalSegFixture(File out) throws IOException {
+        File scratch = new File(out, WALSEG_SCRATCH);
+        check(!scratch.exists(), "stale scratch directory in the way: " + scratch);
+        Files.createDirectories(scratch.toPath());
+        File base = new File(scratch, "x");
+        StoreWAL s = new StoreWAL(base);
+        try {
+            s.put(payload(51, 100), RAW);
+            s.commit();
+        } finally {
+            s.close();
+        }
+        File[] segs = scratch.listFiles((d, n) -> n.matches("x\\.wal\\.[0-9a-f]{16}"));
+        check(segs != null && segs.length == 1, "expected exactly ONE WAL segment in " + scratch
+                + ", found " + (segs == null ? "none" : Arrays.toString(segs)));
+        File dest = new File(out, WALSEG_FILE);
+        Files.deleteIfExists(dest.toPath());
+        Files.move(segs[0].toPath(), dest.toPath());
+        // everything else in the scratch namespace (the .lock sidecar) is an open-time artifact
+        File[] rest = scratch.listFiles();
+        check(rest != null, "scratch directory vanished: " + scratch);
+        for (File f : rest) {
+            check(f.isFile(), "unexpected non-file scratch artifact: " + f);
+            Files.delete(f.toPath());
+        }
+        Files.delete(scratch.toPath());
+    }
+
     // ---------- fragment.tsv ----------
 
-    private static void writeFragment(File fragment, File db, Generated r) throws IOException {
+    private static void writeFragment(File fragment, File db, File walseg, Generated r) throws IOException {
         byte[] raw = Files.readAllBytes(db.toPath());
+        byte[] walsegRaw = Files.readAllBytes(walseg.toPath());
         StringBuilder sb = new StringBuilder();
         sb.append("# xfixtures fragment written by org.mapdb.xfixtures.FixtureWriter.\n");
         sb.append("# The sync script merges fragments, appends the gzSha256 column to file rows\n");
@@ -318,6 +372,9 @@ public final class FixtureWriter {
         appendRecid(sb, "E", r.e, "deleted", 5, E_LEN);
         sb.append("recidrange\t").append(FIXTURE_ID).append("\tchurn\t").append(r.churnFrom).append('\t')
                 .append(r.churnTo).append("\tdeleted\t").append(CHURN_PAYLOAD_BASE).append('\t').append(E_LEN).append('\n');
+        // Stage 2: the java v3 segment gets its file row only — reject fixtures carry no recid rows
+        sb.append("file\t").append(WALSEG_FIXTURE_ID).append('\t').append(WALSEG_FILE).append('\t')
+                .append(walsegRaw.length).append('\t').append(sha256Hex(walsegRaw)).append('\n');
         Files.write(fragment.toPath(), sb.toString().getBytes(StandardCharsets.UTF_8));
     }
 
@@ -367,13 +424,23 @@ public final class FixtureWriter {
         Files.deleteIfExists(db.toPath());
         Files.deleteIfExists(new File(out, DB_FILE + ".lock").toPath());
         Files.deleteIfExists(new File(out, "fragment.tsv").toPath());
+        File walseg = new File(out, WALSEG_FILE);
+        Files.deleteIfExists(walseg.toPath());
+        File staleScratch = new File(out, WALSEG_SCRATCH);
+        if (staleScratch.isDirectory()) { // a --force rerun after an aborted emission
+            File[] stale = staleScratch.listFiles();
+            if (stale != null) for (File f : stale) Files.deleteIfExists(f.toPath());
+            Files.deleteIfExists(staleScratch.toPath());
+        }
 
         Generated r = writeWorkload(db);
         selfCheck(db, r);
-        writeFragment(new File(out, "fragment.tsv"), db, r);
+        writeWalSegFixture(out);
+        writeFragment(new File(out, "fragment.tsv"), db, walseg, r);
         // the store lock file is an open-time artifact, not fixture content
         Files.deleteIfExists(new File(out, DB_FILE + ".lock").toPath());
-        System.out.println("wrote " + db + " (" + db.length() + " bytes) and fragment.tsv");
+        System.out.println("wrote " + db + " (" + db.length() + " bytes), "
+                + walseg + " (" + walseg.length() + " bytes) and fragment.tsv");
     }
 
     private static void usage(String problem) {

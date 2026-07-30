@@ -4,7 +4,9 @@ import org.junit.After;
 import org.junit.Test;
 import org.mapdb.DBException;
 import org.mapdb.TmpFiles;
+import org.mapdb.store.Store;
 import org.mapdb.store.StoreDirect;
+import org.mapdb.store.StoreWAL;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -27,23 +29,25 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 /**
- * Cross-port conformance harness (Stage 1): runs every {@code engine == java} cell of the
- * checked-in fixture manifest against this engine.
+ * Cross-port conformance harness (Stages 1 and 2): runs every {@code engine == java} cell of
+ * the checked-in fixture manifest against this engine.
  *
  * <p>The fixtures pin the CURRENT state of an UNSTABLE format so that silent divergence
  * between the store engines is detected. Cross-engine openability today is an implementation
  * fact, not a supported feature; any format change regenerates the fixtures as part of that
  * change (see {@link FixtureWriter} and the sync script in the planning repo).
  *
- * <p>Flow per the Stage-1 contract: load {@code xfixtures/MANIFEST.tsv} from the classpath
+ * <p>Flow per the Stage-1/2 contracts: load {@code xfixtures/MANIFEST.tsv} from the classpath
  * (HARD failure when absent — a missing manifest means the fixture sync step never ran for
  * this checkout — or when its version is not 1), gunzip every fixture file once into a
  * session temp dir verifying length and SHA-256, then run each cell in a fresh private
  * directory over its own working copy: accept cells get {@code verify()} + the full
  * per-recid reader contract + exact {@code getAllRecids}; reject cells must fail to open
- * with {@link DBException.DataCorruption}. Either way the working copy must stay
- * byte-identical and nothing beyond {@code .lock} sidecars may appear. All temp state lives
- * in {@link TmpFiles}-owned directories so nothing leaks into {@code java.io.tmpdir}.
+ * with {@link DBException.DataCorruption} — via {@link StoreDirect} for {@code direct} rows,
+ * via {@link StoreWAL} on the BASE path for {@code wal} rows (the fixture placed at
+ * {@code <base>.wal} hits the N6 no-migration boundary). Either way the working copy must
+ * stay byte-identical and nothing beyond {@code .lock} sidecars may appear. All temp state
+ * lives in {@link TmpFiles}-owned directories so nothing leaks into {@code java.io.tmpdir}.
  */
 public class XFixtureConformanceTest {
 
@@ -79,12 +83,12 @@ public class XFixtureConformanceTest {
         final List<Expect> expects = new ArrayList<>();
         final Map<String, List<FixtureWriter.RecidExpect>> recids = new HashMap<>();
 
-        /** Stage 1: every fixture has exactly one file row (asserted while resolving). */
+        /** Stages 1 and 2: every fixture has exactly one file row (asserted while resolving). */
         FileRow fileOf(String fixtureId) {
             FileRow found = null;
             for (FileRow f : files) {
                 if (!f.fixtureId.equals(fixtureId)) continue;
-                assertTrue("fixture " + fixtureId + " has more than one file row (Stage 1 forbids that)",
+                assertTrue("fixture " + fixtureId + " has more than one file row (Stages 1-2 forbid that)",
                         found == null);
                 found = f;
             }
@@ -115,9 +119,13 @@ public class XFixtureConformanceTest {
             }
             switch (t[0]) {
                 case "fixture":
+                    assertEquals("bad fixture row: " + line, 5, t.length);
+                    assertTrue("duplicate fixture row: " + line,
+                            !m.fixtureKinds.containsKey(t[1]));
                     m.fixtureKinds.put(t[1], t[2]);
                     break;
                 case "file": {
+                    assertEquals("bad file row: " + line, 6, t.length);
                     FileRow f = new FileRow();
                     f.fixtureId = t[1];
                     f.relName = t[2];
@@ -128,6 +136,7 @@ public class XFixtureConformanceTest {
                     break;
                 }
                 case "expect": {
+                    assertEquals("bad expect row: " + line, 7, t.length);
                     Expect e = new Expect();
                     e.fixtureId = t[1];
                     e.engine = t[2];
@@ -139,11 +148,14 @@ public class XFixtureConformanceTest {
                     break;
                 }
                 case "recid":
+                    assertEquals("bad recid row: " + line, 7, t.length);
                     m.recids.computeIfAbsent(t[1], k -> new ArrayList<>()).add(new FixtureWriter.RecidExpect(
                             t[2], Long.parseLong(t[3]), t[4], Integer.parseInt(t[5]), Integer.parseInt(t[6])));
                     break;
                 case "recidrange": {
+                    assertEquals("bad recidrange row: " + line, 8, t.length);
                     long from = Long.parseLong(t[3]), to = Long.parseLong(t[4]);
+                    assertTrue("empty recidrange row: " + line, from <= to);
                     int base = Integer.parseInt(t[6]), len = Integer.parseInt(t[7]);
                     List<FixtureWriter.RecidExpect> list = m.recids.computeIfAbsent(t[1], k -> new ArrayList<>());
                     for (long r = from; r <= to; r++)
@@ -151,6 +163,7 @@ public class XFixtureConformanceTest {
                     break;
                 }
                 case "edit":
+                    assertEquals("bad edit row: " + line, 6, t.length);
                     // reject-derivation provenance; the referenced files are consumed pre-edited
                     break;
                 default:
@@ -191,8 +204,9 @@ public class XFixtureConformanceTest {
 
     private void runCell(Manifest m, Expect e, File pristine) throws IOException {
         String ctx = "cell[" + e.fixtureId + " java " + e.verdict + " " + e.opener + "]";
-        // Stage 1 has no java WAL-opener rows; an unknown opener is a manifest error, not a skip.
-        assertEquals(ctx + ": unsupported opener", "direct", e.opener);
+        // Stage 2 knows exactly two openers; anything else is a manifest error, not a skip.
+        assertTrue(ctx + ": unsupported opener " + e.opener,
+                "direct".equals(e.opener) || "wal".equals(e.opener));
 
         File cell = tempDir("xfcell");
         File work = new File(cell, e.placeAs);
@@ -200,9 +214,13 @@ public class XFixtureConformanceTest {
         byte[] before = Files.readAllBytes(work.toPath());
         TreeSet<String> namesBefore = listNames(cell);
 
+        // direct rows carry the file path in openArg; java wal rows carry the store BASE path
+        // (the fixture sits at placeAs = <base>.wal, where the N6 no-migration boundary sees it).
         File openTarget = new File(cell, e.openArg);
         switch (e.verdict) {
             case "accept": {
+                // Stage 2 has no java accept-wal rows (the W fixtures are port-format v1).
+                assertEquals(ctx + ": unsupported accept opener", "direct", e.opener);
                 StoreDirect s = new StoreDirect(openTarget);
                 try {
                     List<FixtureWriter.RecidExpect> expects = m.recids.get(e.fixtureId);
@@ -215,7 +233,12 @@ public class XFixtureConformanceTest {
             }
             case "reject":
                 try {
-                    StoreDirect s = new StoreDirect(openTarget);
+                    // wal: WalSegmentSet's N6 check throws DataCorruption on the bare <base>.wal
+                    // file BEFORE any namespace mutation (only the .lock sidecar precedes it), so
+                    // the byte-unchanged and no-new-files assertions below hold for this arm too.
+                    Store s = "wal".equals(e.opener)
+                            ? new StoreWAL(openTarget)
+                            : new StoreDirect(openTarget);
                     s.close();
                     fail(ctx + ": expected DBException.DataCorruption, but the store opened");
                 } catch (DBException.DataCorruption expected) {
