@@ -62,10 +62,11 @@ import java.util.zip.CRC32;
  *
  * <p>The length-prefixed, CRC-in-header section means: CRCs are validated BEFORE any entry is
  * decoded (garbage never allocates); replay applies entry-by-entry in O(1) memory; a section
- * body may exceed 2 GiB (THIS writer never emits one — {@link DataOutput2} is byte[]-backed and
- * checkpoint images are chunked ~1 MiB — so the int64 {@code bodyLen} is headroom for foreign
- * writers; {@code WalHugeSectionIT} replays a crafted one); and a damaged section FOLLOWED by a
- * valid one is distinguishable from
+ * body may exceed 2 GiB (the commit writer STREAMS the body in two passes — see
+ * {@code SectionBody} — so a transaction staging more than 2 GiB emits one genuinely huge
+ * section; {@code WalHugeCommitIT} writes one, {@code WalHugeSectionIT} replays a
+ * foreign-crafted one; checkpoint images stay chunked ~1 MiB); and a damaged section FOLLOWED
+ * by a valid one is distinguishable from
  * a torn tail — mid-log corruption raises {@link DBException.DataCorruption} instead of silently
  * discarding committed history. W3 (rollover only at a section boundary, after the
  * sealed segment's last section is forced) is what lets a tear in a NON-FINAL segment be called
@@ -1598,23 +1599,113 @@ public class StoreWAL implements StoreDelta, StoreTx {
      * </ul>
      */
     private void appendSection(int tag, long lsn, byte[] body, int bodyLen) {
+        appendSection(tag, lsn, sink -> sink.write(body, 0, bodyLen));
+    }
+
+    /**
+     * Produces one section body for {@link #appendSection(int, long, SectionBody)}. Invoked TWICE
+     * per section — a measure pass (length + CRC, no I/O) and a write pass — and must emit
+     * identical bytes both times; the writer refuses to acknowledge a section whose passes
+     * diverge, because the alternative is an acknowledged commit whose stored {@code bodyCrc}
+     * rejects it on replay as bit rot.
+     */
+    private interface SectionBody {
+        void emit(BodySink sink) throws IOException;
+    }
+
+    /**
+     * One pass over a section body. The measure pass ({@code ch == null}) accumulates length and
+     * CRC only; the write pass also writes the bytes at increasing offsets, coalescing entry
+     * framing (tens of bytes per entry) through a buffer so a large commit is not syscall-bound,
+     * while payload arrays at or past the buffer size bypass it. Offsets and the running length
+     * are {@code long}: a body may exceed 2 GiB and no whole-body array exists in either pass.
+     */
+    private static final class BodySink {
+        private final FileChannel ch;
+        private final CRC32 crc;
+        private long pos;
+        private long count;
+        private final byte[] buf;
+        private int bufLen;
+
+        BodySink(FileChannel ch, long bodyStart, CRC32 crc) {
+            this.ch = ch;
+            this.pos = bodyStart;
+            this.crc = crc;
+            this.buf = ch == null ? null : new byte[64 << 10];
+        }
+
+        void write(byte[] b, int off, int len) throws IOException {
+            crc.update(b, off, len);
+            count += len;
+            if (ch == null) return;
+            if (len >= buf.length) {
+                flush();
+                pos += writeFullyAt(ch, ByteBuffer.wrap(b, off, len), pos);
+                return;
+            }
+            if (bufLen + len > buf.length) flush();
+            System.arraycopy(b, off, buf, bufLen, len);
+            bufLen += len;
+        }
+
+        void flush() throws IOException {
+            if (bufLen == 0) return;
+            pos += writeFullyAt(ch, ByteBuffer.wrap(buf, 0, bufLen), pos);
+            bufLen = 0;
+        }
+    }
+
+    /**
+     * Streaming variant: the body is emitted twice ({@link SectionBody}) instead of arriving as
+     * an array, so a single commit may exceed 2 GiB — the format's int64 {@code bodyLen} used by
+     * this writer, not just held as foreign-writer headroom. Two-pass-CRC rather than
+     * reserve-and-backpatch on purpose: the header is still written FIRST and final, so the write
+     * order, the {@link WalIo} event sequence, and the crash shapes are identical to the old
+     * single-array writer — a tear mid-body leaves a valid header over a short or CRC-bad body,
+     * the same torn tail as before. The pass-divergence check throws BEFORE the force, so a
+     * nondeterministic body fails the commit closed (W9) instead of acknowledging a section that
+     * replay rejects.
+     */
+    private void appendSection(int tag, long lsn, SectionBody body) {
+        boolean ioStarted = false;
         try {
-            if (activeSeg.fileLen >= segmentBytes && !activeSeg.empty()) rollover(lsn);
+            if (activeSeg.fileLen >= segmentBytes && !activeSeg.empty()) {
+                ioStarted = true;
+                rollover(lsn);
+            }
             long off = activeSeg.fileLen;
+
+            // pass 1: measure — bodyLen + bodyCrc, no I/O
+            CRC32 bcrc = new CRC32();
+            activeSeg.crcDomain(bcrc, off);
+            BodySink measure = new BodySink(null, 0, bcrc);
+            body.emit(measure);
+            long bodyLen = measure.count;
+            int bodyCrcV = (int) bcrc.getValue();
+
             ByteBuffer hdr = ByteBuffer.allocate(SEC_HDR);
             hdr.put((byte) tag).putLong(lsn).putLong(bodyLen);
             CRC32 hcrc = new CRC32();
             activeSeg.crcDomain(hcrc, off);
             hcrc.update(hdr.array(), 0, SEC_HDR_CRC_LEN);
-            CRC32 bcrc = new CRC32();
-            activeSeg.crcDomain(bcrc, off);
-            bcrc.update(body, 0, bodyLen);
-            hdr.putInt((int) hcrc.getValue()).putInt((int) bcrc.getValue()).flip();
+            hdr.putInt((int) hcrc.getValue()).putInt(bodyCrcV).flip();
             long p = off;
+            ioStarted = true;
             walIoEvent(WalOpKind.SEC_HEADER, activeSeg.seq, p, SEC_HDR, tag);
             p += writeFullyAt(activeSeg.channel(), hdr, p);
             walIoEvent(WalOpKind.SEC_BODY, activeSeg.seq, p, bodyLen, tag);
-            writeFullyAt(activeSeg.channel(), ByteBuffer.wrap(body, 0, bodyLen), p);
+
+            // pass 2: write — must reproduce pass 1's bytes exactly, checked before the force
+            CRC32 bcrc2 = new CRC32();
+            activeSeg.crcDomain(bcrc2, off);
+            BodySink writer = new BodySink(activeSeg.channel(), p, bcrc2);
+            body.emit(writer);
+            writer.flush();
+            if (writer.count != bodyLen || (int) bcrc2.getValue() != bodyCrcV)
+                throw new IOException("section body diverged between the CRC pass and the write pass ("
+                        + writer.count + " vs " + bodyLen + " bytes); refusing to acknowledge");
+
             // force(false) — a DATA sync. This relies on the POSIX guarantee that fdatasync
             // persists "the metadata required to retrieve the data", which for an append means the
             // new file size; FileChannel.force(false)'s own javadoc promises less than that, so the
@@ -1627,6 +1718,15 @@ public class StoreWAL implements StoreDelta, StoreTx {
             activeSeg.validEnd = activeSeg.fileLen;
         } catch (IOException | RuntimeException e) {
             failClosed("WAL write failed", e);
+        } catch (Error e) {
+            // Before I/O, an Error has changed no WAL state and keeps the old contract: it
+            // escapes with the staged transaction and handle intact. Once rollover or a section
+            // write has begun, however, the physical file may extend past fileLen. A retry with a
+            // shorter body can leave that stale tail behind; sealing the segment later would turn
+            // it into a torn NON-FINAL segment that recovery must reject. Close the handle under
+            // W9, but preserve the original Error rather than translating it to DBException.
+            if (ioStarted) closeAfterWalFailure();
+            throw e;
         }
     }
 
@@ -1648,14 +1748,19 @@ public class StoreWAL implements StoreDelta, StoreTx {
      * segment holding partial bytes. Durable state on disk is intact and reopen replays it.
      */
     private void failClosed(String what, Throwable cause) {
+        closeAfterWalFailure();
+        throw new DBException(what + "; store closed, reopen to recover the durable sections", cause);
+    }
+
+    /** Marks the handle unusable and releases both stores after a WAL write became suspect. */
+    private void closeAfterWalFailure() {
         closed = true;
         try {
             segs.close();
-        } catch (RuntimeException ignored) { }
+        } catch (RuntimeException | Error ignored) { /* surface the original WAL failure */ }
         try {
             inner.close();
-        } catch (RuntimeException ignored) { }
-        throw new DBException(what + "; store closed, reopen to recover the durable sections", cause);
+        } catch (RuntimeException | Error ignored) { /* surface the original WAL failure */ }
     }
 
     // ---------- StoreTx ----------
@@ -1723,44 +1828,58 @@ public class StoreWAL implements StoreDelta, StoreTx {
             // WAL v2 section: header(tag,lsn,bodyLen,crcs) + entries; fsync = durability point.
             // The section LSN is decided here, so the base deltas below are
             // relative to a value that cannot change under them.
+            // STREAMED, not accumulated: the emitter below runs twice (measure + write passes,
+            // see SectionBody) over the immutable ops snapshot, so a commit staging more than
+            // 2 GiB emits one genuinely huge section instead of dying in a doubling byte[].
+            // Deterministic by construction — ops, their data arrays and sectionLsn are all
+            // fixed before the first pass. The append-base assertion is preflighted before
+            // appendSection can roll over or write, so it still fails the commit with the store
+            // open and the staged transaction intact, exactly as the accumulating writer did.
             long sectionLsn = nextLsn;
-            DataOutput2 out = new DataOutput2(1024);
+            // Validate append identities before appendSection can roll over. The old accumulating
+            // encoder performed this check before entering appendSection too; keeping it here
+            // preserves the promise above even when the active segment is already full.
             for (WalOp op : ops) {
-                switch (op.type()) {
-                    case T_PREALLOC, T_DELETE -> {
-                        out.writeByte(op.type());
-                        out.packLong(op.recid());
-                    }
-                    case T_RECORD -> {
-                        out.writeByte(T_RECORD);
-                        out.packLong(op.recid());
-                        out.packLong(op.cap());
-                        if (op.data() == null) out.packLong(0);
-                        else {
-                            out.packLong(op.data().length + 1);
-                            out.write(op.data());
-                        }
-                    }
-                    case T_APPEND -> {
-                        out.writeByte(T_APPEND);
-                        out.packLong(op.recid());
-                        // base identity, as a delta against this section's own LSN (§4.2):
-                        // >= 1 by construction, because the base was established by a
-                        // strictly earlier section, and typically one byte because a hot
-                        // record's base is recent. Envelope, not payload: the encoder and
-                        // the frame bytes it produced are untouched.
-                        long delta = sectionLsn - op.baseLsn();
-                        if (delta < 1) throw new AssertionError("append base LSN " + op.baseLsn()
-                                + " is not below its section LSN " + sectionLsn + ", recid=" + op.recid());
-                        out.packLong(delta);
-                        out.packLong(op.data().length);
-                        out.write(op.data());
-                    }
-                    case T_TRANSIENT -> { /* not logged */ }
-                    default -> throw new AssertionError();
-                }
+                if (op.type() != T_APPEND) continue;
+                long delta = sectionLsn - op.baseLsn();
+                if (delta < 1) throw new AssertionError("append base LSN " + op.baseLsn()
+                        + " is not below its section LSN " + sectionLsn + ", recid=" + op.recid());
             }
-            appendSection(TAG_SECTION, sectionLsn, out.buf, out.pos);
+            DataOutput2 frame = new DataOutput2(64);
+            appendSection(TAG_SECTION, sectionLsn, sink -> {
+                for (WalOp op : ops) {
+                    frame.pos = 0;
+                    switch (op.type()) {
+                        case T_PREALLOC, T_DELETE -> {
+                            frame.writeByte(op.type());
+                            frame.packLong(op.recid());
+                        }
+                        case T_RECORD -> {
+                            frame.writeByte(T_RECORD);
+                            frame.packLong(op.recid());
+                            frame.packLong(op.cap());
+                            frame.packLong(op.data() == null ? 0 : op.data().length + 1);
+                        }
+                        case T_APPEND -> {
+                            frame.writeByte(T_APPEND);
+                            frame.packLong(op.recid());
+                            // base identity, as a delta against this section's own LSN (§4.2):
+                            // >= 1 by construction, because the base was established by a
+                            // strictly earlier section, and typically one byte because a hot
+                            // record's base is recent. Envelope, not payload: the encoder and
+                            // the frame bytes it produced are untouched.
+                            long delta = sectionLsn - op.baseLsn();
+                            frame.packLong(delta);
+                            frame.packLong(op.data().length);
+                        }
+                        case T_TRANSIENT -> { /* not logged */ }
+                        default -> throw new AssertionError();
+                    }
+                    sink.write(frame.buf, 0, frame.pos);
+                    if (op.data() != null && (op.type() == T_RECORD || op.type() == T_APPEND))
+                        sink.write(op.data(), 0, op.data().length);
+                }
+            });
             nextLsn++;
             // The latch's staleness clock (see `futileAtChanges`). SELF-CONTAINED entries only: an
             // append extends a record whose image is already the log's youngest, so it obsoletes

@@ -20,6 +20,7 @@ import java.util.Map;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -857,6 +858,49 @@ public class StoreWALWriterFaultTest {
                 + " W7 is about", truncated);
         assertTrue("W7: the reopen appended into the segment it had just truncated, reusing that"
                 + " segment's checksum domain", !appendedIntoTorn);
+    }
+
+    /**
+     * W9 applies to Errors too once section I/O has begun. Leaving the handle open is not rescued
+     * by keeping fileLen at the old boundary: a retry with a shorter section can leave stale bytes
+     * beyond its logical end, and a later rollover then seals a torn non-final segment.
+     */
+    @Test public void an_error_after_section_io_begins_fails_closed_and_preserves_the_error() {
+        File f = newFile();
+        StoreWAL s = new StoreWAL(f);
+        byte[] committed = Fixtures.payload(1, 1, 40);
+        long kept = s.put(committed, Fixtures.RAW);
+        s.commit();
+
+        long uncommitted = s.put(Fixtures.payload(2, 2, 40), Fixtures.RAW);
+        AssertionError injected = new AssertionError(
+                "injected Error after the section header write");
+        StoreWAL.testSetWalIo(e -> {
+            if (e.kind() == StoreWAL.WalOpKind.SEC_BODY) throw injected;
+        });
+        try {
+            s.commit();
+            fail("injected Error did not escape commit");
+        } catch (AssertionError expected) {
+            assertSame("the WAL Error was translated or replaced", injected, expected);
+            assertTrue("W9: Error after section I/O left the handle open", s.isClosed());
+        } finally {
+            StoreWAL.testSetWalIo(null);
+            s.close();
+        }
+
+        StoreWAL reopened = new StoreWAL(f);
+        try {
+            assertArrayEquals("the Error cost a previously acknowledged commit",
+                    committed, reopened.get(kept, Fixtures.RAW));
+            try {
+                reopened.get(uncommitted, Fixtures.RAW);
+                fail("the header-only section from the failed commit was replayed");
+            } catch (org.mapdb.DBException.GetVoid expected) { /* torn tail was discarded */ }
+            reopened.verify();
+        } finally {
+            reopened.close();
+        }
     }
 
     // ---------- helpers for the mutation tests ----------

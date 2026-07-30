@@ -14,11 +14,10 @@ import static org.mapdb.stress.StressSupport.*;
 
 /**
  * Replay of ONE WAL section whose body exceeds 2 GiB. The format's {@code bodyLen} is an
- * int64 and the reader streams it ({@code WalIn} long offsets, windowed body CRC), but the
- * Java production writer cannot emit such a section — {@code DataOutput2} is byte[]-backed
- * and checkpoint images are chunked ~1 MiB — so this coverage needs a FOREIGN writer:
- * {@link WalTestKit.SectionAppender} streams the section the way a Rust/Zig/Go port with no
- * array cap would, and this test proves the Java reader honors the headroom. Distinct from
+ * int64 and the reader streams it ({@code WalIn} long offsets, windowed body CRC).
+ * {@link WalTestKit.SectionAppender} deliberately supplies this one through a FOREIGN writer,
+ * independent of the production two-pass commit path covered by {@link WalHugeCommitIT}; it
+ * proves the reader against a different encoder rather than its own mirror image. Distinct from
  * {@link WalHugeReopenIT}, which covers over-2-GiB <em>segments</em> made of small sections.
  *
  * <p>The huge commit both overwrites a seeded record and creates ~2100 fresh recids, and the

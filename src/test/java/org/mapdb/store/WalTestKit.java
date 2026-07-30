@@ -220,6 +220,37 @@ public final class WalTestKit {
         return lsnOf(seg, sectionOffset(seg, n - 1));
     }
 
+    /**
+     * Section headers of a segment as {@code {tag, lsn, bodyLen}} rows, walked STREAMING via
+     * positional channel reads — usable on an over-2-GiB segment that {@link #read} cannot
+     * materialize. Headers only, no CRC validation (reopen is the validating reader); a
+     * trailing partial header/body is ignored, like {@link #sectionCount}.
+     */
+    public static long[][] sectionHeaders(File segment) throws IOException {
+        java.util.ArrayList<long[]> rows = new java.util.ArrayList<>();
+        try (FileChannel ch = FileChannel.open(segment.toPath(), StandardOpenOption.READ)) {
+            long size = ch.size();
+            long pos = SEG_HDR;
+            ByteBuffer hdr = ByteBuffer.allocate(SEC_HDR);
+            while (size - pos >= SEC_HDR) {
+                hdr.clear();
+                while (hdr.hasRemaining()) {
+                    int n = ch.read(hdr, pos + hdr.position());
+                    if (n < 0) throw new IOException("EOF mid-header in " + segment);
+                }
+                hdr.flip();
+                long tag = hdr.get() & 0xFF;
+                long lsn = hdr.getLong();
+                long bodyLen = hdr.getLong();
+                // Subtraction form avoids signed-long overflow on an adversarial header.
+                if (bodyLen < 0 || bodyLen > size - pos - SEC_HDR) break;
+                rows.add(new long[]{tag, lsn, bodyLen});
+                pos += SEC_HDR + bodyLen;
+            }
+        }
+        return rows.toArray(new long[0][]);
+    }
+
     // ---------- foreign-writer streaming append ----------
 
     /**
@@ -227,8 +258,10 @@ public final class WalTestKit {
      * port without Java's {@code byte[]} cap — would: positional {@link FileChannel} writes,
      * the 25-byte header reserved up front and backpatched by {@link #finish()}, the body CRC
      * accumulated incrementally. No array the size of the body ever exists, so {@code bodyLen}
-     * can exceed 2 GiB — the case the format's int64 {@code bodyLen} is headroom for, which
-     * the Java production writer cannot emit.
+     * can exceed 2 GiB. This is deliberately INDEPENDENT of the production writer's own
+     * streaming path ({@code StoreWAL.SectionBody}): a huge section replayed from this
+     * appender proves the reader against a foreign encoder, not against the Java writer's
+     * mirror image.
      */
     public static final class SectionAppender implements Closeable {
 
