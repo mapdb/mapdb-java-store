@@ -1,5 +1,6 @@
 package org.mapdb.db;
 
+import org.mapdb.TmpFiles;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
@@ -103,7 +104,7 @@ public class DBHashRuntimeParityTest {
     }
 
     @Test public void hashCounterPersistsAndTracksViewMutations() throws Exception {
-        File file = File.createTempFile("mapdb-hash-counter", ".db");
+        File file = TmpFiles.tempFile("mapdb-hash-counter", ".db");
         file.delete();
         try {
             DB db = DBMaker.fileDB(file).transactionEnable().make();
@@ -133,7 +134,7 @@ public class DBHashRuntimeParityTest {
     }
 
     @Test public void hashSetCounterPersistsAndTracksIteratorMutations() throws Exception {
-        File file = File.createTempFile("mapdb-hash-set-counter", ".db");
+        File file = TmpFiles.tempFile("mapdb-hash-set-counter", ".db");
         file.delete();
         try {
             DB db = DBMaker.fileDB(file).transactionEnable().make();

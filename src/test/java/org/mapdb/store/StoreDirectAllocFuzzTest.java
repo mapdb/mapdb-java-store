@@ -2,10 +2,10 @@ package org.mapdb.store;
 
 import org.junit.After;
 import org.junit.Test;
+import org.mapdb.TmpFiles;
 
 import java.io.File;
 import java.io.IOException;
-import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -29,7 +29,7 @@ public class StoreDirectAllocFuzzTest {
     private final List<File> files = new ArrayList<>();
 
     @After public void cleanup() {
-        for (File f : files) f.delete();
+        for (File f : files) TmpFiles.delete(f);
         files.clear();
     }
 
@@ -54,7 +54,7 @@ public class StoreDirectAllocFuzzTest {
     @Test public void alloc_fuzz_with_reopen() throws IOException {
         long seed = Long.getLong("fuzz.seed", 0xA110CA7EL);
         System.out.println("StoreDirectAllocFuzzTest seed=" + Long.toHexString(seed) + " ops=" + OPS);
-        File f = Files.createTempFile("mapdb-allocfuzz", ".db").toFile();
+        File f = TmpFiles.tempFile("mapdb-allocfuzz", ".db");
         f.delete();
         files.add(f);
 

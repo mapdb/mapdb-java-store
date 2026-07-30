@@ -3,10 +3,10 @@ package org.mapdb.store;
 import org.junit.After;
 import org.junit.Test;
 import org.mapdb.DBException;
+import org.mapdb.TmpFiles;
 
 import java.io.File;
 import java.io.IOException;
-import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
@@ -818,7 +818,7 @@ public class StoreWALSegmentEventEnumeratorTest {
     }
 
     private File newFile() throws IOException {
-        File f = Files.createTempFile("mapdb-segenum", ".wal").toFile();
+        File f = TmpFiles.tempFile("mapdb-segenum", ".wal");
         f.delete();
         files.add(f);
         return f;

@@ -1,5 +1,6 @@
 package org.mapdb.db;
 
+import org.mapdb.TmpFiles;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 
@@ -12,7 +13,7 @@ import org.mapdb.ser.StringGroupFormat;
 
 public class DBTreeExternalValuesTest {
     @Test public void catalogPersistence() throws Exception {
-        File file = File.createTempFile("mapdb-tree-external", ".db");
+        File file = TmpFiles.tempFile("mapdb-tree-external", ".db");
         file.delete();
         try {
             DB db = DBMaker.fileDB(file).transactionEnable().make();

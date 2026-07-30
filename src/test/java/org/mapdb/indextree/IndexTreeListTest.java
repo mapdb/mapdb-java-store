@@ -1,6 +1,7 @@
 package org.mapdb.indextree;
 
 import org.junit.Test;
+import org.mapdb.TmpFiles;
 import org.mapdb.ser.Serializers;
 import org.mapdb.store.Store;
 import org.mapdb.store.StoreByteArray;
@@ -189,7 +190,7 @@ public class IndexTreeListTest {
     }
 
     @Test public void committedContentSurvivesReopen() throws IOException {
-        File file = File.createTempFile("indextree-list", ".db");
+        File file = TmpFiles.tempFile("indextree-list", ".db");
         file.delete();
         try {
             List<String> oracle = new ArrayList<>();

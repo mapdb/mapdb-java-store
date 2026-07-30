@@ -3,6 +3,7 @@ package org.mapdb.store;
 import org.junit.Assume;
 import org.junit.Before;
 import org.junit.Test;
+import org.mapdb.TmpFiles;
 import org.mapdb.io.DataInput2;
 import org.mapdb.io.DataOutput2;
 import org.mapdb.ser.Serializer;
@@ -10,7 +11,6 @@ import org.mapdb.ser.Serializers;
 
 import java.io.File;
 import java.io.IOException;
-import java.nio.file.Files;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
@@ -28,7 +28,7 @@ public class DeadlockAssertsTest {
 
     private static Store walStore() {
         try {
-            File f = Files.createTempFile("mapdb-deadlock", ".wal").toFile();
+            File f = TmpFiles.tempFile("mapdb-deadlock", ".wal");
             f.delete();
             f.deleteOnExit();
             return new StoreWAL(f);

@@ -2,6 +2,7 @@ package org.mapdb.store;
 
 import org.junit.After;
 import org.junit.Test;
+import org.mapdb.TmpFiles;
 
 import java.io.File;
 import java.io.IOException;
@@ -22,14 +23,14 @@ public class StoreDirectCompactionTest {
     private final List<File> files = new ArrayList<>();
 
     private File newFile() throws IOException {
-        File f = Files.createTempFile("mapdb-compact", ".db").toFile();
+        File f = TmpFiles.tempFile("mapdb-compact", ".db");
         f.delete();
         files.add(f);
         return f;
     }
 
     @After public void cleanup() {
-        for (File f : files) f.delete();
+        for (File f : files) TmpFiles.delete(f);
         files.clear();
     }
 

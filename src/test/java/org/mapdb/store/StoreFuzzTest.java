@@ -2,10 +2,10 @@ package org.mapdb.store;
 
 import org.junit.Test;
 import org.mapdb.DBException;
+import org.mapdb.TmpFiles;
 
 import java.io.File;
 import java.io.IOException;
-import java.nio.file.Files;
 import java.util.Arrays;
 import java.util.Random;
 
@@ -51,7 +51,7 @@ public class StoreFuzzTest {
     @Test public void fuzz_direct_and_wal_match_reference() throws IOException {
         long seed = Long.getLong("fuzz.seed", 0xDEADBEEF12345L);
         System.out.println("StoreFuzzTest seed=" + Long.toHexString(seed) + " ops=" + OPS + " slots=" + N_SLOTS);
-        File walFile = Files.createTempFile("mapdb-fuzz", ".wal").toFile();
+        File walFile = TmpFiles.tempFile("mapdb-fuzz", ".wal");
         walFile.delete();
         StoreWAL wal = new StoreWAL(walFile);
         stores = new StoreDelta[]{new StoreByteArray(), new StoreDirect(), wal, new StoreAppendOnly(),

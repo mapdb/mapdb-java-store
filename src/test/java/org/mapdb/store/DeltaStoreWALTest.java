@@ -1,10 +1,9 @@
 package org.mapdb.store;
 
-import org.junit.After;
+import org.mapdb.TmpFiles;
 
 import java.io.File;
 import java.io.IOException;
-import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -14,7 +13,7 @@ public class DeltaStoreWALTest extends DeltaTCK {
 
     @Override protected StoreDelta createStore() {
         try {
-            File f = Files.createTempFile("mapdb-wal-delta", ".wal").toFile();
+            File f = TmpFiles.tempFile("mapdb-wal-delta", ".wal");
             f.delete();
             files.add(f);
             return new StoreWAL(f);
@@ -23,8 +22,8 @@ public class DeltaStoreWALTest extends DeltaTCK {
         }
     }
 
-    @After public void deleteFiles() {
-        for (File f : files) f.delete();
+    @Override protected void cleanup() {
+        for (File f : files) TmpFiles.delete(f);
         files.clear();
     }
 }

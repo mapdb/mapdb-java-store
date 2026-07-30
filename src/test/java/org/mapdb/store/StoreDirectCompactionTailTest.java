@@ -2,6 +2,7 @@ package org.mapdb.store;
 
 import org.junit.After;
 import org.junit.Test;
+import org.mapdb.TmpFiles;
 
 import java.io.File;
 import java.io.IOException;
@@ -27,7 +28,7 @@ public class StoreDirectCompactionTailTest {
     private final List<File> files = new ArrayList<>();
 
     private File newFile() throws IOException {
-        File f = Files.createTempFile("mapdb-compact-tail", ".db").toFile();
+        File f = TmpFiles.tempFile("mapdb-compact-tail", ".db");
         f.delete();
         files.add(f);
         return f;
@@ -36,7 +37,7 @@ public class StoreDirectCompactionTailTest {
     @After public void cleanup() {
         StoreDirect.testCompactCrashHook = null;
         StoreDirect.testTamperMode = 0;
-        for (File f : files) f.delete();
+        for (File f : files) TmpFiles.delete(f);
         files.clear();
     }
 

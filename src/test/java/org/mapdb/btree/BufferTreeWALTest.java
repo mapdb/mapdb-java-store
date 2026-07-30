@@ -1,6 +1,7 @@
 package org.mapdb.btree;
 
 import org.junit.Test;
+import org.mapdb.TmpFiles;
 import org.mapdb.ser.LongFormat;
 import org.mapdb.store.StoreDelta;
 import org.mapdb.store.StoreWAL;
@@ -24,7 +25,7 @@ public class BufferTreeWALTest extends BufferTreeMapTCK {
     @Override
     protected StoreDelta openStore() {
         try {
-            file = File.createTempFile("buffertree-wal-tck", ".wal");
+            file = TmpFiles.tempFile("buffertree-wal-tck", ".wal");
             file.delete(); // StoreWAL will (re)create it
         } catch (IOException e) {
             throw new RuntimeException(e);
@@ -34,7 +35,7 @@ public class BufferTreeWALTest extends BufferTreeMapTCK {
 
     @Override
     protected void cleanup() {
-        if (file != null) file.delete();
+        TmpFiles.delete(file);
     }
 
     // ---------- durability / reopen (WAL-specific) ----------
@@ -60,7 +61,7 @@ public class BufferTreeWALTest extends BufferTreeMapTCK {
      *  verify committed content survives — with buffers unflushed at commit time. */
     @Test
     public void committedContentSurvivesReopen() throws IOException {
-        File f = File.createTempFile("buffertree-wal-reopen", ".wal");
+        File f = TmpFiles.tempFile("buffertree-wal-reopen", ".wal");
         f.delete();
         try {
             final TreeMap<Long, Long> oracle = new TreeMap<>();
@@ -113,7 +114,7 @@ public class BufferTreeWALTest extends BufferTreeMapTCK {
     /** A commit issued AFTER flushAll (consolidated on disk) reopens identically. */
     @Test
     public void flushedThenCommittedSurvivesReopen() throws IOException {
-        File f = File.createTempFile("buffertree-wal-reopen-flushed", ".wal");
+        File f = TmpFiles.tempFile("buffertree-wal-reopen-flushed", ".wal");
         f.delete();
         try {
             final TreeMap<Long, Long> oracle = new TreeMap<>();
@@ -145,7 +146,7 @@ public class BufferTreeWALTest extends BufferTreeMapTCK {
     /** Mutations made after commit but NOT committed are lost on reopen. */
     @Test
     public void uncommittedMutationsAreLostAfterReopen() throws IOException {
-        File f = File.createTempFile("buffertree-wal-uncommitted", ".wal");
+        File f = TmpFiles.tempFile("buffertree-wal-uncommitted", ".wal");
         f.delete();
         try {
             final TreeMap<Long, Long> committed = new TreeMap<>();

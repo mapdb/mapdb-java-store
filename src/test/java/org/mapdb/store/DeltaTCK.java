@@ -33,11 +33,18 @@ public abstract class DeltaTCK {
     }
 
     @After public void tearDown() {
-        for (StoreDelta s : opened) {
-            try { if (!s.isClosed()) s.close(); } catch (Throwable ignore) {}
+        try {
+            for (StoreDelta s : opened) {
+                try { if (!s.isClosed()) s.close(); } catch (Throwable ignore) {}
+            }
+            opened.clear();
+        } finally {
+            cleanup();
         }
-        opened.clear();
     }
+
+    /** Subclass hook for post-close resource cleanup (temp files). See {@link StoreTCK#cleanup()}. */
+    protected void cleanup() { }
 
     // ---------- helpers ----------
 

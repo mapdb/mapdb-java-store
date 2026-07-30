@@ -1,5 +1,6 @@
 package org.mapdb.db;
 
+import org.mapdb.TmpFiles;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
@@ -46,7 +47,7 @@ public class DBParityUtilitiesTest {
     }
 
     @Test public void dbStreamingSinkPersistsCounterAndListeners() throws Exception {
-        File file = File.createTempFile("mapdb-tree-sink", ".db");
+        File file = TmpFiles.tempFile("mapdb-tree-sink", ".db");
         file.delete();
         try {
             List<String> events = new ArrayList<>();

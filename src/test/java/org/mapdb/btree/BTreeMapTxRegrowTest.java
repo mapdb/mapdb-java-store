@@ -3,6 +3,7 @@ package org.mapdb.btree;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
+import org.mapdb.TmpFiles;
 import org.mapdb.ser.LongFormat;
 import org.mapdb.store.StoreWAL;
 
@@ -39,13 +40,13 @@ public class BTreeMapTxRegrowTest {
 
     @Before
     public void setUp() throws IOException {
-        file = File.createTempFile("btree-tx-regrow", ".wal");
+        file = TmpFiles.tempFile("btree-tx-regrow", ".wal");
         file.delete(); // StoreWAL will (re)create it
     }
 
     @After
     public void tearDown() {
-        if (file != null) file.delete();
+        TmpFiles.delete(file);
     }
 
     @Test

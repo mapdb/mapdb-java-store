@@ -1,5 +1,6 @@
 package org.mapdb.htree;
 
+import org.mapdb.TmpFiles;
 import org.mapdb.store.Store;
 import org.mapdb.store.StoreWAL;
 
@@ -13,7 +14,7 @@ public class HTreeMap48WALTest extends HTreeMap48TCK {
     @Override
     protected Store openStore() {
         try {
-            file = File.createTempFile("htree48-wal-tck", ".wal");
+            file = TmpFiles.tempFile("htree48-wal-tck", ".wal");
             file.delete(); // StoreWAL will (re)create it
         } catch (IOException e) {
             throw new RuntimeException(e);
@@ -23,6 +24,6 @@ public class HTreeMap48WALTest extends HTreeMap48TCK {
 
     @Override
     protected void cleanup() {
-        if (file != null) file.delete();
+        TmpFiles.delete(file);
     }
 }

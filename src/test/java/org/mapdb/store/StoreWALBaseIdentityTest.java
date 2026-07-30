@@ -3,13 +3,13 @@ package org.mapdb.store;
 import org.junit.After;
 import org.junit.Test;
 import org.mapdb.DBException;
+import org.mapdb.TmpFiles;
 import org.mapdb.io.DataOutput2;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.zip.CRC32;
@@ -36,7 +36,7 @@ public class StoreWALBaseIdentityTest {
 
     private File newFile(String tag) {
         try {
-            File f = Files.createTempFile("mapdb-wal-base-" + tag, ".wal").toFile();
+            File f = TmpFiles.tempFile("mapdb-wal-base-" + tag, ".wal");
             f.delete();
             files.add(f);
             return f;
@@ -46,10 +46,7 @@ public class StoreWALBaseIdentityTest {
     }
 
     @After public void cleanup() {
-        for (File f : files) {
-            f.delete();
-            org.mapdb.store.WalTestKit.deleteStore(f);
-        }
+        for (File f : files) TmpFiles.delete(f);
         files.clear();
     }
 

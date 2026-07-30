@@ -4,6 +4,7 @@ import org.junit.After;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
+import org.mapdb.TmpFiles;
 import org.mapdb.btree.BTreeMap;
 import org.mapdb.ser.GroupFormat;
 import org.mapdb.ser.LongFormat;
@@ -52,7 +53,7 @@ public class PortedBTreeScenarioTest {
             case "ByteArray" -> { return new StoreByteArray(); }
             case "OnHeap" -> { return new StoreOnHeap(); }
             case "WAL" -> {
-                tmp = File.createTempFile("mapdb-ported-btree", ".wal");
+                tmp = TmpFiles.tempFile("mapdb-ported-btree", ".wal");
                 tmp.delete();
                 return new StoreWAL(tmp);
             }
@@ -62,7 +63,7 @@ public class PortedBTreeScenarioTest {
 
     @After public void tearDown() {
         try { if (store != null && !store.isClosed()) store.close(); } catch (Throwable ignore) {}
-        if (tmp != null) { try { tmp.delete(); } catch (Throwable ignore) {} }
+        TmpFiles.delete(tmp);
     }
 
     private BTreeMap<Long, Long> longMap(int maxNodeSize) throws Exception {

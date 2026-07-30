@@ -1,5 +1,6 @@
 package org.mapdb.db;
 
+import org.mapdb.TmpFiles;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
@@ -111,7 +112,7 @@ public class DBSmokeTest {
     }
 
     @Test public void persistAcrossReopen() throws Exception {
-        File f = File.createTempFile("mapdb-db", ".db");
+        File f = TmpFiles.tempFile("mapdb-db", ".db");
         f.delete();
         try {
             DB db = DBMaker.fileDB(f).transactionEnable().make();
@@ -180,7 +181,7 @@ public class DBSmokeTest {
 
     @Test public void rollbackClearsCache() {
         File tmp;
-        try { tmp = File.createTempFile("mapdb-rb", ".db"); tmp.delete(); }
+        try { tmp = TmpFiles.tempFile("mapdb-rb", ".db"); tmp.delete(); }
         catch (Exception e) { throw new RuntimeException(e); }
         try {
             DB db = DBMaker.fileDB(tmp).transactionEnable().make();
@@ -227,7 +228,7 @@ public class DBSmokeTest {
     }
 
     @Test public void byteArrayKeysWithContentHasher() throws Exception {
-        File f = File.createTempFile("mapdb-hash", ".db");
+        File f = TmpFiles.tempFile("mapdb-hash", ".db");
         f.delete();
         try {
             DB db = DBMaker.fileDB(f).transactionEnable().make();

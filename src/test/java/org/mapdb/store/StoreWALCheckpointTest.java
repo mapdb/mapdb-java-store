@@ -3,6 +3,7 @@ package org.mapdb.store;
 import org.junit.After;
 import org.junit.Test;
 import org.mapdb.DBException;
+import org.mapdb.TmpFiles;
 
 import java.io.File;
 import java.io.IOException;
@@ -34,7 +35,7 @@ public class StoreWALCheckpointTest {
 
     private File newFile(String tag) {
         try {
-            File f = Files.createTempFile("mapdb-wal-ckpt-" + tag, ".wal").toFile();
+            File f = TmpFiles.tempFile("mapdb-wal-ckpt-" + tag, ".wal");
             f.delete();
             files.add(f);
             return f;
@@ -45,7 +46,7 @@ public class StoreWALCheckpointTest {
 
     @After public void cleanup() {
         StoreWAL.testSetDirectorySync(null);
-        for (File f : files) WalTestKit.deleteStore(f);
+        for (File f : files) TmpFiles.delete(f);
         files.clear();
     }
 

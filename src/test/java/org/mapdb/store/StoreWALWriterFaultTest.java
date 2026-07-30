@@ -2,13 +2,13 @@ package org.mapdb.store;
 
 import org.junit.After;
 import org.junit.Test;
+import org.mapdb.TmpFiles;
 
 import java.io.File;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
-import java.nio.file.Files;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.EnumMap;
@@ -97,7 +97,7 @@ public class StoreWALWriterFaultTest {
 
     private File newFile() {
         try {
-            File f = Files.createTempFile("mapdb-wal-tier2", ".wal").toFile();
+            File f = TmpFiles.tempFile("mapdb-wal-tier2", ".wal");
             f.delete();
             files.add(f);
             return f;
@@ -108,7 +108,7 @@ public class StoreWALWriterFaultTest {
 
     @After public void cleanup() {
         StoreWAL.testSetWalIo(null);
-        for (File f : files) WalTestKit.deleteStore(f);
+        for (File f : files) TmpFiles.delete(f);
         files.clear();
     }
 

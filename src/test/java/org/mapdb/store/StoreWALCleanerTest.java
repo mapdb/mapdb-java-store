@@ -3,10 +3,10 @@ package org.mapdb.store;
 import org.junit.After;
 import org.junit.Test;
 import org.mapdb.DBException;
+import org.mapdb.TmpFiles;
 
 import java.io.File;
 import java.io.IOException;
-import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
@@ -47,7 +47,7 @@ public class StoreWALCleanerTest {
 
     private File newFile() {
         try {
-            File f = Files.createTempFile("mapdb-wal-cleaner", ".wal").toFile();
+            File f = TmpFiles.tempFile("mapdb-wal-cleaner", ".wal");
             f.delete();
             files.add(f);
             return f;
@@ -59,7 +59,7 @@ public class StoreWALCleanerTest {
     @After public void cleanup() {
         StoreWAL.testSetDirectorySync(null);
         StoreWAL.testDropRecidFromPublish = 0;
-        for (File f : files) WalTestKit.deleteStore(f);
+        for (File f : files) TmpFiles.delete(f);
         files.clear();
     }
 

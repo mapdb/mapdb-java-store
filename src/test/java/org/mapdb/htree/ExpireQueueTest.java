@@ -2,6 +2,7 @@ package org.mapdb.htree;
 
 import org.junit.Test;
 import org.mapdb.DBException;
+import org.mapdb.TmpFiles;
 import org.mapdb.store.Store;
 import org.mapdb.store.StoreByteArray;
 import org.mapdb.store.StoreDirect;
@@ -10,7 +11,6 @@ import org.mapdb.store.StoreWAL;
 
 import java.io.File;
 import java.io.IOException;
-import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.PrimitiveIterator;
@@ -187,7 +187,7 @@ public class ExpireQueueTest {
 
     @Test
     public void directQueueSurvivesReopenAndKeepsNodeRecidsStable() throws IOException {
-        File f = Files.createTempFile("mapdb-expireq-direct", ".db").toFile();
+        File f = TmpFiles.tempFile("mapdb-expireq-direct", ".db");
         f.delete();
         long tail, head, headPrev, r1, r2, r3;
         try {
@@ -250,7 +250,7 @@ public class ExpireQueueTest {
 
     @Test
     public void walQueueSurvivesCommitCheckpointReopenAndClears() throws IOException {
-        File f = Files.createTempFile("mapdb-expireq-wal", ".wal").toFile();
+        File f = TmpFiles.tempFile("mapdb-expireq-wal", ".wal");
         f.delete();
         long tail, head, headPrev, r2, r4;
         try {

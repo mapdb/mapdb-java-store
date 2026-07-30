@@ -5,6 +5,7 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
 import org.mapdb.DBException;
+import org.mapdb.TmpFiles;
 import org.mapdb.ser.Serializer;
 import org.mapdb.ser.Serializers;
 import org.mapdb.store.Store;
@@ -57,7 +58,7 @@ public class PortedStoreSuite {
             case "ByteArray" -> s = new StoreByteArray();
             case "OnHeap" -> s = new StoreOnHeap();
             case "WAL" -> {
-                File f = File.createTempFile("mapdb-ported", ".wal");
+                File f = TmpFiles.tempFile("mapdb-ported", ".wal");
                 f.delete();
                 tmpFiles.add(f);
                 s = new StoreWAL(f);

@@ -1,6 +1,7 @@
 package org.mapdb.indextree;
 
 import org.junit.Test;
+import org.mapdb.TmpFiles;
 import org.mapdb.store.Store;
 import org.mapdb.store.StoreByteArray;
 import org.mapdb.store.StoreDirect;
@@ -165,7 +166,7 @@ public class IndexTreeLongLongMapTest {
     }
 
     @Test public void committedContentSurvivesReopen() throws IOException {
-        File file = File.createTempFile("indextree-llm", ".db");
+        File file = TmpFiles.tempFile("indextree-llm", ".db");
         file.delete();
         try {
             Map<Long, Long> oracle = new TreeMap<>();

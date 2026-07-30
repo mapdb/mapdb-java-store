@@ -1,5 +1,6 @@
 package org.mapdb.htree;
 
+import org.mapdb.TmpFiles;
 import org.mapdb.store.Store;
 import org.mapdb.store.StoreWAL;
 
@@ -13,7 +14,7 @@ public class HTreeExternalWALTest extends HTreeExternalTCK {
     @Override
     protected Store openStore() {
         try {
-            file = File.createTempFile("htree-external-wal-tck", ".wal");
+            file = TmpFiles.tempFile("htree-external-wal-tck", ".wal");
             file.delete(); // StoreWAL will (re)create it
         } catch (IOException e) {
             throw new RuntimeException(e);
@@ -23,6 +24,6 @@ public class HTreeExternalWALTest extends HTreeExternalTCK {
 
     @Override
     protected void cleanup() {
-        if (file != null) file.delete();
+        TmpFiles.delete(file);
     }
 }

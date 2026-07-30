@@ -1,5 +1,6 @@
 package org.mapdb.db;
 
+import org.mapdb.TmpFiles;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
@@ -28,7 +29,7 @@ public class DBParameterizedCatalogTest {
     }
 
     @Test public void parameterizedCodecsReopenWithoutResupply() throws Exception {
-        File file = File.createTempFile("mapdb-parameterized", ".db");
+        File file = TmpFiles.tempFile("mapdb-parameterized", ".db");
         file.delete();
         try {
             DB db = DBMaker.fileDB(file).transactionEnable().make();

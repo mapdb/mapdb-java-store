@@ -2,6 +2,7 @@ package org.mapdb.ported;
 
 import org.junit.Test;
 import org.mapdb.DBException;
+import org.mapdb.TmpFiles;
 import org.mapdb.store.StoreDirect;
 import org.mapdb.store.StoreWAL;
 
@@ -86,7 +87,7 @@ public class PortedRecordTooLargeTest {
 
     // WAL stores oversize merged records as linked chains at commit and replays them.
     @Test public void wal_over_cap_commits_and_survives_reopen() throws Exception {
-        File f = File.createTempFile("mapdb-ported-toolarge", ".wal");
+        File f = TmpFiles.tempFile("mapdb-ported-toolarge", ".wal");
         f.delete();
         byte[] over = Ported.bytes(Ported.MAX_CONTENT + 1, 7);
         long r;

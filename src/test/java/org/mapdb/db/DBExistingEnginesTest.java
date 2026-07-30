@@ -1,5 +1,6 @@
 package org.mapdb.db;
 
+import org.mapdb.TmpFiles;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
@@ -46,7 +47,7 @@ public class DBExistingEnginesTest {
     }
 
     @Test public void bufferTreeMapPersistsAndOpensReadOnly() throws Exception {
-        File file = File.createTempFile("mapdb-buffer-db", ".db");
+        File file = TmpFiles.tempFile("mapdb-buffer-db", ".db");
         file.delete();
         try {
             DB db = DBMaker.fileDB(file).make();
@@ -95,7 +96,7 @@ public class DBExistingEnginesTest {
     }
 
     @Test public void hashMap48PersistsWithBuiltinHasherAndUntypedDispatch() throws Exception {
-        File file = File.createTempFile("mapdb-hash48-db", ".db");
+        File file = TmpFiles.tempFile("mapdb-hash48-db", ".db");
         file.delete();
         try {
             DB db = DBMaker.fileDB(file).transactionEnable().make();

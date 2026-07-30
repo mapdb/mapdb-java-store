@@ -1,6 +1,7 @@
 package org.mapdb.stress;
 
 import org.junit.Test;
+import org.mapdb.TmpFiles;
 import org.mapdb.btree.BufferTreeMap;
 import org.mapdb.ser.LongFormat;
 import org.mapdb.store.StoreAppendOnly;
@@ -97,7 +98,7 @@ public class BufferTreeHardConcurrencyIT {
     }
 
     @Test public void hammerStoreWAL() throws Exception {
-        File wal = File.createTempFile("buftree-hard-wal", ".wal");
+        File wal = TmpFiles.tempFile("buftree-hard-wal", ".wal");
         wal.delete();
         try {
             run("StoreWAL(threadSafe)", () -> new StoreWAL(wal, false, true), null);

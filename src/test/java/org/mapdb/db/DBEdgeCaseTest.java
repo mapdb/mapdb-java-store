@@ -1,5 +1,6 @@
 package org.mapdb.db;
 
+import org.mapdb.TmpFiles;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -43,7 +44,7 @@ public class DBEdgeCaseTest {
 
     /** Allocates a fresh (non-existent) temp file path plus its WAL checkpoint sidecar. */
     private static File freshFile() throws Exception {
-        File f = File.createTempFile("mapdb-edge", ".db");
+        File f = TmpFiles.tempFile("mapdb-edge", ".db");
         f.delete();
         return f;
     }

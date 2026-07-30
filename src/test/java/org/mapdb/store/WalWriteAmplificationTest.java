@@ -2,6 +2,7 @@ package org.mapdb.store;
 
 import org.junit.After;
 import org.junit.Test;
+import org.mapdb.TmpFiles;
 import org.mapdb.btree.BTreeMap;
 import org.mapdb.btree.BufferTreeMap;
 import org.mapdb.ser.LongFormat;
@@ -41,7 +42,7 @@ public class WalWriteAmplificationTest {
 
     private File newFile(String tag) {
         try {
-            File f = Files.createTempFile("mapdb-wamp-" + tag, ".wal").toFile();
+            File f = TmpFiles.tempFile("mapdb-wamp-" + tag, ".wal");
             f.delete();
             files.add(f);
             return f;
@@ -51,12 +52,7 @@ public class WalWriteAmplificationTest {
     }
 
     @After public void cleanup() {
-        for (File f : files) {
-            File dir = f.getParentFile();
-            File[] siblings = dir.listFiles((d, n) -> n.startsWith(f.getName()));
-            if (siblings != null) for (File s : siblings) s.delete();
-            f.delete();
-        }
+        for (File f : files) TmpFiles.delete(f);
         files.clear();
     }
 

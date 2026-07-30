@@ -2,6 +2,7 @@ package org.mapdb.btree;
 
 import org.junit.After;
 import org.junit.Test;
+import org.mapdb.TmpFiles;
 import org.mapdb.format.BufferedPageFormat;
 import org.mapdb.format.FpModeTestHook;
 import org.mapdb.io.DataInput2;
@@ -54,7 +55,7 @@ public class BufferTreeFingerprintTest {
 
     // ---- P7: identical results under NORMAL / FORCE_SEARCH / RANDOM on the SAME pages ----
     @Test public void resultsIdenticalAcrossFpModes() throws IOException {
-        File wal = File.createTempFile("bt-fp-modes", ".wal");
+        File wal = TmpFiles.tempFile("bt-fp-modes", ".wal");
         wal.delete();
         try {
             for (StoreDelta s : new StoreDelta[]{new StoreDirect(false), new StoreByteArray(), new StoreWAL(wal)}) {
@@ -147,7 +148,7 @@ public class BufferTreeFingerprintTest {
     }
 
     private void reopenRoundTrip(boolean wal) throws IOException {
-        File f = File.createTempFile("bt-fp-reopen", wal ? ".wal" : ".db");
+        File f = TmpFiles.tempFile("bt-fp-reopen", wal ? ".wal" : ".db");
         f.delete();
         try {
             TreeMap<Long, Long> oracle = new TreeMap<>();

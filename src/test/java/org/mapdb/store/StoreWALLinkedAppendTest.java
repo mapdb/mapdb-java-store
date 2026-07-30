@@ -2,10 +2,10 @@ package org.mapdb.store;
 
 import org.junit.After;
 import org.junit.Test;
+import org.mapdb.TmpFiles;
 
 import java.io.File;
 import java.io.IOException;
-import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -38,7 +38,7 @@ public class StoreWALLinkedAppendTest {
 
     private File newFile(String tag) {
         try {
-            File f = Files.createTempFile("mapdb-wal-linked-" + tag, ".wal").toFile();
+            File f = TmpFiles.tempFile("mapdb-wal-linked-" + tag, ".wal");
             f.delete();
             files.add(f);
             return f;
@@ -48,7 +48,7 @@ public class StoreWALLinkedAppendTest {
     }
 
     @After public void cleanup() {
-        for (File f : files) { f.delete(); org.mapdb.store.WalTestKit.deleteStore(f); }
+        for (File f : files) TmpFiles.delete(f);
         files.clear();
     }
 

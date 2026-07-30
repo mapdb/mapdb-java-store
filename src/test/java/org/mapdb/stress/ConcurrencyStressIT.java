@@ -2,6 +2,7 @@ package org.mapdb.stress;
 
 import org.junit.After;
 import org.junit.Test;
+import org.mapdb.TmpFiles;
 import org.mapdb.btree.BTreeMap;
 import org.mapdb.ser.LongFormat;
 import org.mapdb.store.Store;
@@ -40,7 +41,7 @@ public class ConcurrencyStressIT {
     private File walFile;
 
     @After public void cleanup() {
-        if (walFile != null) walFile.delete();
+        TmpFiles.delete(walFile);
     }
 
     // ---------------- 1. StoreDirect + StoreByteArray: mixed ops, whole-pool reads ----------------
@@ -325,7 +326,7 @@ public class ConcurrencyStressIT {
     // ---------------- 3. StoreWAL: readers on committed data + writer commit cycles ----------------
 
     @Test public void walReaders() throws Exception {
-        walFile = File.createTempFile("stress-wal-conc", ".wal");
+        walFile = TmpFiles.tempFile("stress-wal-conc", ".wal");
         walFile.delete();
         StoreWAL store = new StoreWAL(walFile);
         try {

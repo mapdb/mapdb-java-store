@@ -1,10 +1,9 @@
 package org.mapdb.store;
 
-import org.junit.After;
+import org.mapdb.TmpFiles;
 
 import java.io.File;
 import java.io.IOException;
-import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -15,7 +14,7 @@ public class StoreDirectFileTest extends StoreTCK {
 
     @Override protected Store createStore() {
         try {
-            File f = Files.createTempFile("mapdb-direct", ".db").toFile();
+            File f = TmpFiles.tempFile("mapdb-direct", ".db");
             f.delete();
             files.add(f);
             return new StoreDirect(f);
@@ -24,8 +23,8 @@ public class StoreDirectFileTest extends StoreTCK {
         }
     }
 
-    @After public void deleteFiles() {
-        for (File f : files) f.delete();
+    @Override protected void cleanup() {
+        for (File f : files) TmpFiles.delete(f);
         files.clear();
     }
 }

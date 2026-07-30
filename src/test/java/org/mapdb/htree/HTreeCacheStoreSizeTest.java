@@ -1,6 +1,7 @@
 package org.mapdb.htree;
 
 import org.junit.Test;
+import org.mapdb.TmpFiles;
 import org.mapdb.ser.Serializers;
 import org.mapdb.store.Store;
 import org.mapdb.store.StoreDirect;
@@ -185,7 +186,7 @@ public class HTreeCacheStoreSizeTest {
      */
     @Test
     public void storeSizeEvictionFiresOnStoreWAL() throws IOException {
-        File file = File.createTempFile("htree-cache-wal-storesize", ".wal");
+        File file = TmpFiles.tempFile("htree-cache-wal-storesize", ".wal");
         file.delete();
         try {
             StoreWAL store = new StoreWAL(file);

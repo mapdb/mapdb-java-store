@@ -1,5 +1,6 @@
 package org.mapdb.ser;
 
+import org.mapdb.TmpFiles;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
@@ -111,7 +112,7 @@ public class SerializerParityTest {
     }
 
     @Test public void registeredSerializersReopenThroughUntypedCatalog() throws Exception {
-        File file = File.createTempFile("mapdb-serializer-parity", ".db");
+        File file = TmpFiles.tempFile("mapdb-serializer-parity", ".db");
         file.delete();
         try {
             DB db = DBMaker.fileDB(file).transactionEnable().make();

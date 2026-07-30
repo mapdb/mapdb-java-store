@@ -1,5 +1,6 @@
 package org.mapdb.db;
 
+import org.mapdb.TmpFiles;
 import static org.junit.Assert.assertEquals;
 
 import java.io.File;
@@ -13,7 +14,7 @@ import org.mapdb.ser.Serializers;
 
 public class DBQueueTest {
     @Test public void queueFamiliesPersistAndDispatch() throws Exception {
-        File file = File.createTempFile("mapdb-queues", ".db");
+        File file = TmpFiles.tempFile("mapdb-queues", ".db");
         file.delete();
         try {
             DB db = DBMaker.fileDB(file).transactionEnable().make();

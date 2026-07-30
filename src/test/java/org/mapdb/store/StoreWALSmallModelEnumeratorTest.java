@@ -3,10 +3,10 @@ package org.mapdb.store;
 import org.junit.After;
 import org.junit.Test;
 import org.mapdb.DBException;
+import org.mapdb.TmpFiles;
 
 import java.io.File;
 import java.io.IOException;
-import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -79,10 +79,7 @@ public class StoreWALSmallModelEnumeratorTest {
     private int operations;
 
     @After public void cleanup() {
-        for (File f : files) {
-            f.delete();
-            org.mapdb.store.WalTestKit.deleteStore(f);
-        }
+        for (File f : files) TmpFiles.delete(f);
         files.clear();
     }
 
@@ -344,7 +341,7 @@ public class StoreWALSmallModelEnumeratorTest {
     }
 
     private File newFile() throws IOException {
-        File f = Files.createTempFile("mapdb-wal-enum", ".wal").toFile();
+        File f = TmpFiles.tempFile("mapdb-wal-enum", ".wal");
         f.delete();
         files.add(f);
         return f;

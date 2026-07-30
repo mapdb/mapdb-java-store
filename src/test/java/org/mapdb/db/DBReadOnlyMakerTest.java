@@ -1,5 +1,6 @@
 package org.mapdb.db;
 
+import org.mapdb.TmpFiles;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertThrows;
@@ -25,7 +26,7 @@ import org.mapdb.ser.StringGroupFormat;
 public class DBReadOnlyMakerTest {
 
     private static File freshFile() throws Exception {
-        File f = File.createTempFile("mapdb-ro", ".db");
+        File f = TmpFiles.tempFile("mapdb-ro", ".db");
         f.delete();
         return f;
     }

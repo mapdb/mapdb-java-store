@@ -2,10 +2,10 @@ package org.mapdb.store;
 
 import org.junit.After;
 import org.junit.Test;
+import org.mapdb.TmpFiles;
 
 import java.io.File;
 import java.io.IOException;
-import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -56,7 +56,7 @@ public class StoreWALCleanerScanCostTest {
 
     private File newFile() {
         try {
-            File f = Files.createTempFile("mapdb-wal-scancost", ".wal").toFile();
+            File f = TmpFiles.tempFile("mapdb-wal-scancost", ".wal");
             f.delete();
             files.add(f);
             return f;
@@ -66,7 +66,7 @@ public class StoreWALCleanerScanCostTest {
     }
 
     @After public void cleanup() {
-        for (File f : files) WalTestKit.deleteStore(f);
+        for (File f : files) TmpFiles.delete(f);
         files.clear();
     }
 

@@ -3,6 +3,7 @@ package org.mapdb.store;
 import org.junit.After;
 import org.junit.Test;
 import org.mapdb.DBException;
+import org.mapdb.TmpFiles;
 
 import java.io.File;
 import java.io.IOException;
@@ -38,7 +39,7 @@ public class StoreDirectFileLockTest {
     private final List<File> files = new ArrayList<>();
 
     private File newFile() throws IOException {
-        File f = Files.createTempFile("mapdb-lock", ".db").toFile();
+        File f = TmpFiles.tempFile("mapdb-lock", ".db");
         f.delete();
         files.add(f);
         return f;
@@ -49,15 +50,7 @@ public class StoreDirectFileLockTest {
     }
 
     @After public void cleanup() {
-        for (File f : files) {
-            f.delete();
-            lockFileOf(f).delete();
-            File dir = f.getAbsoluteFile().getParentFile();
-            String prefix = f.getAbsoluteFile().getName() + ".wal.";
-            String[] names = dir == null ? null : dir.list();
-            if (names != null)
-                for (String n : names) if (n.startsWith(prefix)) new File(dir, n).delete();
-        }
+        for (File f : files) TmpFiles.delete(f);
         files.clear();
     }
 
@@ -402,7 +395,7 @@ public class StoreDirectFileLockTest {
         // Output to a FILE, not a pipe: reading a pipe to EOF before waitFor() would block
         // forever on a child that wedges with stdout still open, and the timeout below would
         // never get a chance to fire — a silent CI hang instead of a failed test.
-        File out = File.createTempFile("mapdb-lockprobe", ".out");
+        File out = TmpFiles.tempFile("mapdb-lockprobe", ".out");
         ProcessBuilder pb = new ProcessBuilder(javaBin.getPath(), "-cp",
                 System.getProperty("java.class.path"), LockProbe.class.getName(), f.getPath());
         pb.redirectErrorStream(true);
@@ -414,7 +407,7 @@ public class StoreDirectFileLockTest {
             text = new String(Files.readAllBytes(out.toPath()), StandardCharsets.UTF_8).trim();
         } finally {
             p.destroyForcibly();
-            out.delete();
+            TmpFiles.delete(out);
         }
         String verdict = null;
         for (String line : text.split("\n")) {

@@ -1,13 +1,12 @@
 package org.mapdb.store;
 
-import org.junit.After;
 import org.junit.Test;
 import org.junit.experimental.runners.Enclosed;
 import org.junit.runner.RunWith;
+import org.mapdb.TmpFiles;
 
 import java.io.File;
 import java.io.IOException;
-import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -44,7 +43,7 @@ public class StoreNoLockTests {
 
         @Override protected Store createStore() {
             try {
-                File f = Files.createTempFile("mapdb-wal-nolock", ".wal").toFile();
+                File f = TmpFiles.tempFile("mapdb-wal-nolock", ".wal");
                 f.delete();
                 files.add(f);
                 return new StoreWAL(f, false, false);
@@ -55,8 +54,8 @@ public class StoreNoLockTests {
 
         @Override protected boolean reusesRecidsImmediately() { return false; }
 
-        @After public void deleteFiles() {
-            for (File f : files) f.delete();
+        @Override protected void cleanup() {
+            for (File f : files) TmpFiles.delete(f);
             files.clear();
         }
     }
@@ -74,7 +73,7 @@ public class StoreNoLockTests {
 
         @Override protected StoreDelta createStore() {
             try {
-                File f = Files.createTempFile("mapdb-wal-delta-nolock", ".wal").toFile();
+                File f = TmpFiles.tempFile("mapdb-wal-delta-nolock", ".wal");
                 f.delete();
                 files.add(f);
                 return new StoreWAL(f, false, false);
@@ -83,8 +82,8 @@ public class StoreNoLockTests {
             }
         }
 
-        @After public void deleteFiles() {
-            for (File f : files) f.delete();
+        @Override protected void cleanup() {
+            for (File f : files) TmpFiles.delete(f);
             files.clear();
         }
     }

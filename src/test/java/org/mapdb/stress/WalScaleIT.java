@@ -2,6 +2,7 @@ package org.mapdb.stress;
 
 import org.junit.After;
 import org.junit.Test;
+import org.mapdb.TmpFiles;
 import org.mapdb.store.StoreWAL;
 
 import java.io.File;
@@ -36,7 +37,7 @@ public class WalScaleIT {
     private File walFile;
 
     @After public void cleanup() {
-        if (walFile != null) org.mapdb.store.WalTestKit.deleteStore(walFile);
+        TmpFiles.delete(walFile);
     }
 
     @Test public void walScaleReplay() throws Exception {
@@ -45,7 +46,7 @@ public class WalScaleIT {
         int updPer = scaled(UPD_PER);
         int appPer = scaled(APP_PER);
 
-        walFile = File.createTempFile("stress-wal-scale", ".wal");
+        walFile = TmpFiles.tempFile("stress-wal-scale", ".wal");
         walFile.delete();
 
         long[] recids = new long[commits * newPer];

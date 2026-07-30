@@ -1,10 +1,9 @@
 package org.mapdb.store;
 
-import org.junit.After;
+import org.mapdb.TmpFiles;
 
 import java.io.File;
 import java.io.IOException;
-import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -14,7 +13,7 @@ public class StoreWALTest extends StoreTCK {
 
     @Override protected Store createStore() {
         try {
-            File f = Files.createTempFile("mapdb-wal-tck", ".wal").toFile();
+            File f = TmpFiles.tempFile("mapdb-wal-tck", ".wal");
             f.delete(); // start from a non-existent WAL so each store is empty
             files.add(f);
             return new StoreWAL(f);
@@ -26,8 +25,8 @@ public class StoreWALTest extends StoreTCK {
     /** WAL frees deleted recids only at commit; a subsequent put need not reuse immediately. */
     @Override protected boolean reusesRecidsImmediately() { return false; }
 
-    @After public void deleteFiles() {
-        for (File f : files) f.delete();
+    @Override protected void cleanup() {
+        for (File f : files) TmpFiles.delete(f);
         files.clear();
     }
 }

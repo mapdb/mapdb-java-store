@@ -2,6 +2,7 @@ package org.mapdb.store;
 
 import org.junit.After;
 import org.junit.Test;
+import org.mapdb.TmpFiles;
 import org.mapdb.btree.BTreeMap;
 import org.mapdb.btree.BufferTreeMap;
 import org.mapdb.ser.LongFormat;
@@ -10,7 +11,6 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -45,7 +45,7 @@ public class WalCompositionTest {
 
     private File newFile(String tag) {
         try {
-            File f = Files.createTempFile("mapdb-walcomp-" + tag, ".wal").toFile();
+            File f = TmpFiles.tempFile("mapdb-walcomp-" + tag, ".wal");
             f.delete();
             files.add(f);
             return f;
@@ -55,7 +55,7 @@ public class WalCompositionTest {
     }
 
     @After public void cleanup() {
-        for (File f : files) WalTestKit.deleteStore(f);
+        for (File f : files) TmpFiles.delete(f);
         files.clear();
     }
 

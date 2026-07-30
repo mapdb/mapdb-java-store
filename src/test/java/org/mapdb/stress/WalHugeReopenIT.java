@@ -2,6 +2,7 @@ package org.mapdb.stress;
 
 import org.junit.After;
 import org.junit.Test;
+import org.mapdb.TmpFiles;
 import org.mapdb.store.StoreWAL;
 import org.mapdb.store.WalTestKit;
 
@@ -40,11 +41,11 @@ public class WalHugeReopenIT {
     private File walFile;
 
     @After public void cleanup() {
-        if (walFile != null) WalTestKit.deleteStore(walFile);
+        TmpFiles.delete(walFile);
     }
 
     @Test public void reopen_wal_over_2gib() throws Exception {
-        walFile = File.createTempFile("stress-wal-huge", ".wal");
+        walFile = TmpFiles.tempFile("stress-wal-huge", ".wal");
         walFile.delete();
 
         long[] recids = new long[MAX_RECS];

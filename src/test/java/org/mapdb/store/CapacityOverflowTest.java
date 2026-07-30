@@ -3,10 +3,10 @@ package org.mapdb.store;
 import org.junit.After;
 import org.junit.Test;
 import org.mapdb.DBException;
+import org.mapdb.TmpFiles;
 
 import java.io.File;
 import java.io.IOException;
-import java.nio.file.Files;
 
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.fail;
@@ -24,10 +24,7 @@ public class CapacityOverflowTest {
     private File walFile;
 
     @After public void cleanup() {
-        if (walFile != null) {
-            walFile.delete();
-            org.mapdb.store.WalTestKit.deleteStore(walFile);
-        }
+        TmpFiles.delete(walFile);
     }
 
     @Test public void store_direct_rejects_headroom_overflow_and_stays_usable() {
@@ -51,7 +48,7 @@ public class CapacityOverflowTest {
     }
 
     @Test public void store_wal_rejects_headroom_overflow_before_logging() throws IOException {
-        walFile = Files.createTempFile("mapdb-cap-ovf", ".wal").toFile();
+        walFile = TmpFiles.tempFile("mapdb-cap-ovf", ".wal");
         walFile.delete();
         StoreWAL s = new StoreWAL(walFile);
         try {

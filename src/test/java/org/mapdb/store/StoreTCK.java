@@ -42,11 +42,23 @@ public abstract class StoreTCK {
     }
 
     @After public void tearDown() {
-        for (Store s : opened) {
-            try { if (!s.isClosed()) s.close(); } catch (Throwable ignore) {}
+        try {
+            for (Store s : opened) {
+                try { if (!s.isClosed()) s.close(); } catch (Throwable ignore) {}
+            }
+            opened.clear();
+        } finally {
+            cleanup();
         }
-        opened.clear();
     }
+
+    /**
+     * Subclass hook for post-close resource cleanup (temp files), as in the map TCKs. A subclass
+     * that deletes its files from an {@code @After} of its own instead would delete them
+     * <em>before</em> this one runs — JUnit runs the subclass's hooks first — and so would unlink a
+     * live store's lock file out from under it.
+     */
+    protected void cleanup() { }
 
     // ---------- helpers ----------
 
