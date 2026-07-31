@@ -21,9 +21,21 @@ mvn -B --no-transfer-progress clean verify
 
 echo "== package (licence and notice are in the JAR) =="
 mvn -B --no-transfer-progress -DskipTests package
-jar="$(ls target/mapdb-java-store-*.jar)"
+# Resolve the artifact explicitly and say which one is under test: a bare glob
+# silently yields an empty or multi-line "$jar" (no jar yet, or a sources/tests
+# jar alongside it), and the loop below then reports the FIRST licence file as
+# missing from a JAR it never opened — a confusing failure that looks like a
+# packaging regression.
+mapfile -t jars < <(find target -maxdepth 1 -name 'mapdb-java-store-*.jar' | sort)
+[[ ${#jars[@]} -eq 1 ]] \
+  || { echo "expected exactly one jar in target/, found ${#jars[@]}: ${jars[*]-}"; exit 1; }
+jar="${jars[0]}"
+echo "   jar under test: $jar"
+# Listing captured once: `unzip -l | grep -q` closes the pipe on the first match
+# and, under `set -o pipefail`, an unzip killed by SIGPIPE fails the pipeline.
+listing="$(unzip -l "$jar")"
 for f in LICENSE-EPL-1.0.txt LICENSE-EDL-1.0.txt NOTICE.md; do
-  unzip -l "$jar" | grep -q "META-INF/$f" \
+  grep -q "META-INF/$f" <<<"$listing" \
     || { echo "missing from JAR: META-INF/$f"; exit 1; }
 done
 
