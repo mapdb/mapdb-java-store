@@ -1142,6 +1142,16 @@ public class StoreWALCleanerTest {
         StoreWAL s = new StoreWAL(f);
         try {
             s.setSegmentBytes(ONE_SECTION_PER_SEGMENT);
+            // Drop the inline cleaner's SOFT WALL-CLOCK ceiling. What this test pins is the
+            // cleaner's ACCOUNTING (file bytes, not section bytes) and its WIDTH search (double,
+            // halve rather than reset) — neither involves a clock. Leaving the 500 µs bound in
+            // makes `segsAfter - segsBefore` a measure of how much cleaning fits in 500 µs on THIS
+            // machine, so the test asserts the host's IO speed: it passed on the author's tmpfs and
+            // failed on hosted CI from the very first run, on both JDK arms, with this exact
+            // message. Reproduced locally by shrinking the bound to 20 µs — 20000 -> 20316 over
+            // 600 commits, the hosted failure to the word. The per-tick RECORD and BYTE limits stay
+            // in force, so the cleaner is still budgeted; only the clock is gone.
+            s.testSetForegroundCleanNanos(0);
             s.setMinLogBytes(0);                       // no cleaning while building
             for (int i = 0; i < build; i++) { s.preallocate(); s.commit(); }
 

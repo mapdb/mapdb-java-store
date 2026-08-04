@@ -187,6 +187,21 @@ public class StoreWAL implements StoreDelta, StoreTx {
     private static final MaintenanceBudget UNBOUNDED_BUDGET =
             new MaintenanceBudget(0, 0, 0, 0, true);
 
+    /**
+     * The budget inline cleaning actually runs under. {@link #FOREGROUND_BUDGET} unless a test
+     * replaces it via {@link #testSetForegroundCleanNanos}.
+     *
+     * <p>This exists because {@code maxNanos} makes any assertion about how much cleaning a commit
+     * achieves a function of <em>how fast the machine is</em>. The numbers above were measured on
+     * tmpfs; on slower storage the same 500 µs buys proportionally fewer retirements, because the
+     * budget is absolute time while the work per commit is fixed. A test that pins the cleaner's
+     * ACCOUNTING and WIDTH rules — neither of which involves a clock — must not also depend on that,
+     * or it asserts the host's IO speed and fails wherever the host is slower than the author's.
+     * That is exactly what happened: `minimum_size_segments_do_not_put_cleaning_on_a_treadmill`
+     * passed on tmpfs and failed on hosted CI from the very first run.
+     */
+    private volatile MaintenanceBudget foregroundBudget = FOREGROUND_BUDGET;
+
     private StoreDirect inner;
     private final File file;
     private WalSegmentSet segs;
@@ -2440,13 +2455,13 @@ public class StoreWAL implements StoreDelta, StoreTx {
             // Convergence does not need the loop: a slice re-emits up to 8 MiB and can
             // close a cycle, which retires a whole segment, so it reclaims far more than one commit
             // adds for any ordinary workload.
-            if (cleaner != null || beginCycleIfDueLocked()) cleanTickLocked(FOREGROUND_BUDGET);
+            if (cleaner != null || beginCycleIfDueLocked()) cleanTickLocked(foregroundBudget);
             // The exception is P7's hard ceiling. Once the log has run away — past twice its
             // target — the writer participates until it is back under, and the pause is accepted
             // deliberately: an unbounded pause is the lesser evil against an unbounded log, and
             // this is exactly the case P7 says the committing writer must run cleaning inline for.
             while (cleaningUrgent() && (cleaner != null || beginCycleIfDueLocked()))
-                cleanTickLocked(FOREGROUND_BUDGET);
+                cleanTickLocked(foregroundBudget);
         } catch (IOException e) {
             failClosed("WAL cleaning failed: " + file, e);
         }
@@ -3126,6 +3141,19 @@ public class StoreWAL implements StoreDelta, StoreTx {
         } finally {
             rw.writeLock().unlock();
         }
+    }
+
+    /**
+     * Test hook: replace the SOFT WALL-CLOCK ceiling on inline cleaning; 0 removes it.
+     *
+     * <p>Only {@code maxNanos} moves — the record, byte and fsync limits stay exactly as
+     * {@link #FOREGROUND_BUDGET} sets them, so a test that clears the clock still exercises the
+     * real per-tick work limits. See that field for why a clock-free variant is needed at all.
+     */
+    void testSetForegroundCleanNanos(long maxNanos) {
+        MaintenanceBudget b = FOREGROUND_BUDGET;
+        foregroundBudget = new MaintenanceBudget(b.maxPages, b.maxRecords, b.maxBytes,
+                maxNanos, b.mayFsync);
     }
 
     /** Test hook: one cleaning tick under an arbitrary budget (C11). Returns the bytes written. */
