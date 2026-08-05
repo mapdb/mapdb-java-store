@@ -43,6 +43,16 @@ import static org.mapdb.xfixtures.FixtureWriter.sha256Hex;
  *
  * <p>Zero-length bodies: {@code preallocate()} contributes a section whose entry carries no
  * payload, so the corpus covers the empty-body case §11 asks for without a synthetic hack.
+ *
+ * <p><b>These are NOT the accept bundles, despite sharing their names.</b> The two directories
+ * written here are codec vectors for {@code walfmt.py} and live in
+ * {@code todo/store-cross/testdata/}; the fixture bundles of contract §5.2/§5.3 are written by
+ * {@link Wal3FixtureWriter} (slice C2j) with a different {@code segmentBytes} and a different
+ * workload, and the {@code cleaned} one satisfies §5.3.1's witness rows while this one
+ * deliberately does not (it retains two segments, not three). The collision is real and worth
+ * knowing about: {@code derive.load_corpus} keys these by directory name, so a bundle called
+ * {@code wal3-java-cleaned} means the scaffolding corpus here and the real fixture there.
+ * Replacing the deriver's corpus with the generated bundles is C4's step, at the sync script.
  */
 public final class Wal3GoldenWriter {
 
