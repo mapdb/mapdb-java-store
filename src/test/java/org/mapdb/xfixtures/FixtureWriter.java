@@ -384,7 +384,7 @@ public final class FixtureWriter {
     }
 
     /** {@code git rev-parse HEAD} in the cwd (documented run is from the repo root); "unknown" offline. */
-    private static String gitHeadOrUnknown() {
+    static String gitHeadOrUnknown() {
         try {
             Process p = new ProcessBuilder("git", "rev-parse", "HEAD").redirectErrorStream(true).start();
             String out = new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
