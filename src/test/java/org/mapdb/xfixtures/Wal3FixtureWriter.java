@@ -259,8 +259,14 @@ public final class Wal3FixtureWriter {
                 c.update(raw, off, SEC_HDR_CRC_LEN);
                 check(c.getValue() == (be32(raw, off + 17) & 0xFFFFFFFFL),
                         relName + ": section header CRC mismatch at " + off);
-                check(bodyLen >= 0 && off + SEC_HDR + bodyLen <= raw.length,
-                        relName + ": section body at " + off + " runs past end of file");
+                // Subtract rather than add: `off + SEC_HDR + bodyLen <= raw.length` reads more
+                // naturally and OVERFLOWS for a bodyLen near Long.MAX_VALUE, wrapping negative
+                // and passing the very check it is — the walk would then crash on the (int) cast
+                // instead of refusing. The remaining-bytes form cannot overflow, because both
+                // operands are already bounded by the file length.
+                check(bodyLen >= 0 && bodyLen <= raw.length - off - SEC_HDR,
+                        relName + ": section body at " + off + " claims " + bodyLen
+                                + " bytes, past the end of a " + raw.length + "-byte file");
                 CRC32 cb = domain(raw, off);
                 cb.update(raw, off + SEC_HDR, (int) bodyLen);
                 check(cb.getValue() == (be32(raw, off + 21) & 0xFFFFFFFFL),
