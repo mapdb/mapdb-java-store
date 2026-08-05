@@ -424,10 +424,13 @@ public final class Wal3FixtureWriter {
 
         List<Seg> retained = new ArrayList<>();
         for (Seg g : segs) if (g.seq > through) retained.add(g);
-        check(retained.get(0).seq > 1,
-                CLEANED_ID + ": the retained floor must be above segment 1 (§5.3)");
+        // Cardinality BEFORE indexing: an image retaining nothing is refused for row 1,
+        // which is what is wrong with it, and not with an IndexOutOfBoundsException
+        // thrown on the way to saying so.
         check(retained.size() == 3, CLEANED_ID + ": §5.3.1 row 1 requires exactly three retained "
                 + "segments; this bundle retains " + retained.size());
+        check(retained.get(0).seq > 1,
+                CLEANED_ID + ": the retained floor must be above segment 1 (§5.3)");
         Seg lowest = retained.get(0), middle = retained.get(1), active = retained.get(2);
         check(active.seq == segs.get(segs.size() - 1).seq,
                 CLEANED_ID + ": the highest retained segment is not the highest segment");

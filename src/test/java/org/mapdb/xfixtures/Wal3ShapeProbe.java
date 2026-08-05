@@ -156,8 +156,9 @@ public final class Wal3ShapeProbe {
                 case "shaped-half-rotate":
                     // Only the half of shapeRotate that CROSSES segmentBytes, without the commit
                     // that lands alone in the segment it opens. This is the case the pair exists
-                    // for. It ends with A holding the oversized payload, so it does NOT reach
-                    // §5.3's final state and is measured for SHAPE only — see the guard below.
+                    // for. It ends with A holding the OVERSIZED payload, so it does not reach
+                    // §5.3's final state — it asserts the state it does reach instead, below,
+                    // which is every §5.2 row plus the recid set, with A's expectation moved.
                     t1(s, r); t2(s, r);
                     s.checkpoint();
                     t3(s, r);
