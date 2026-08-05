@@ -44,6 +44,10 @@ import static org.mapdb.xfixtures.FixtureWriter.sha256Hex;
  * <p>Zero-length bodies: {@code preallocate()} contributes a section whose entry carries no
  * payload, so the corpus covers the empty-body case §11 asks for without a synthetic hack.
  *
+ * <p><b>Null content is a separate case and is written deliberately</b> (C3s): {@code lenPlus == 0}
+ * is a null-content record and {@code lenPlus == 1} a zero-length one, and both are in the corpus
+ * so a reader cannot conflate them and stay green. See the workload's commits 6 through 8.
+ *
  * <p><b>These are NOT the accept bundles, despite sharing their names.</b> The two directories
  * written here are codec vectors for {@code walfmt.py} and live in
  * {@code todo/store-cross/testdata/}; the fixture bundles of contract §5.2/§5.3 are written by
@@ -106,6 +110,25 @@ public final class Wal3GoldenWriter {
             s.preallocate();
             s.commit();
             s.put(new byte[0], RAW);
+            s.commit();
+            // commits 7 and 8: a NULL-CONTENT record, which is NOT the same thing as
+            // commit 6's zero-length one and is the distinction the C3 body comparison
+            // exists to keep. `T_RECORD` encodes content length as `lenPlus`, and
+            // `packLong(op.data() == null ? 0 : op.data().length + 1)`
+            // (StoreWAL.java:1875) makes null `0` and zero-length `1`. A reader that
+            // decodes `lenPlus` into a length collapses both to "0 bytes" and every
+            // check downstream of it agrees.
+            //
+            // Added in C3s because the corpus did not contain one: scanned across all
+            // three checked-in bundles, `lenPlus == 0` occurred zero times, so an
+            // engine-against-engine body comparison run over the old corpus could not
+            // fail on the row it most needed to. Two commits rather than one so the
+            // live content and its nulling are separate sections — a single-section
+            // put-then-null would be coalesced by the classifier and log only the
+            // final state, which would pin the null without witnessing the transition.
+            long nul = s.put(payload(base + 4, 32), RAW);
+            s.commit();
+            s.update(nul, null, RAW);
             s.commit();
             if (checkpoint) s.checkpoint();
         } finally {
