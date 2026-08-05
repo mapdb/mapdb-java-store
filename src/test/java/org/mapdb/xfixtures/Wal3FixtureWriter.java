@@ -173,6 +173,11 @@ public final class Wal3FixtureWriter {
             // in a fresh segment: rollover is tested before appending, so the oversized section
             // joins the segment it overflows and only its successor rotates. Both halves rewrite
             // A and the second restores A's §5.2 content, so the final state is untouched.
+            // "Only its successor rotates" is about ORDINARY appends. Cleaning also rotates, at
+            // two unconditional episode seals (`:2322`, `:2494`); neither is reachable here,
+            // because the sole checkpoint is already behind us and minLogBytes keeps auto-clean
+            // from ever firing (§5.1). Using one of those to rotate instead would change the
+            // cleaning history the whole shape is built around.
             s.update(r.a, payload(CLEANED_BASE + 7, (int) SEGMENT_BYTES), RAW);
             s.commit();
             s.update(r.a, payload(CLEANED_BASE + 5, 120), RAW);
