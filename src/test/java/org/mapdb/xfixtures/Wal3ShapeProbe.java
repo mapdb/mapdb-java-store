@@ -31,8 +31,9 @@ import java.util.Arrays;
  * &mdash; and asserts it before closing, so a variant that reaches the shape by changing what the
  * fixture MEANS fails here rather than in review. The one exception is
  * {@code shaped-half-rotate}, which exists precisely to show that half of a state-preserving PAIR
- * is not state-preserving; it returns before the assertion and says so in place. This is a probe,
- * not the generator: it publishes nothing and pins nothing.
+ * is not state-preserving; it asserts the state it DOES reach — A holding the oversized payload,
+ * the rest of §5.2 unchanged — rather than skipping the check. This is a probe, not the generator:
+ * it publishes nothing and pins nothing.
  */
 public final class Wal3ShapeProbe {
 
@@ -167,7 +168,11 @@ public final class Wal3ShapeProbe {
                     s.commit();
                     FixtureWriter.check(s.cleanerBytesWritten() > 0,
                             "the checkpoint wrote no image: this variant is not a CLEANED shape");
-                    return;   // deliberately skips assertFinalState; `finally` still closes
+                    // Not §5.3's final state — that is the point — but not unchecked either:
+                    // A holds the oversized payload and every other record is where §5.2 leaves
+                    // it. The exception this variant is granted is exactly one record wide.
+                    assertStateWithA(s, r, variant, BASE + 7, (int) SEGMENT_BYTES);
+                    return;   // `finally` still closes
                 case "shaped": // the candidate the measurements above argue for
                     t1(s, r); t2(s, r);
                     s.checkpoint();
@@ -189,8 +194,20 @@ public final class Wal3ShapeProbe {
 
     /** §5.3's "same final logical state as tail", asserted before close in every variant. */
     static void assertFinalState(StoreWAL s, Recids r, String ctx) {
+        assertStateWithA(s, r, ctx, BASE + 5, 120);
+    }
+
+    /**
+     * §5.2's final logical state with A's content named by the caller.
+     *
+     * <p>Every adopted workload ends with A holding {@code p(BASE+5, 120)}; the one variant that
+     * deliberately stops mid-pair ends with A holding the oversized payload instead. Naming A's
+     * expectation rather than skipping the check keeps that variant's exception scoped to the ONE
+     * record it is about — otherwise an unrelated state defect in it would be exempt too.
+     */
+    static void assertStateWithA(StoreWAL s, Recids r, String ctx, int aPayloadId, int aLen) {
         FixtureWriter.assertReaderContract(s, Arrays.asList(
-                new FixtureWriter.RecidExpect("A", r.a, "live", BASE + 5, 120),
+                new FixtureWriter.RecidExpect("A", r.a, "live", aPayloadId, aLen),
                 new FixtureWriter.RecidExpect("B", r.b, "live", BASE + 1, 0),
                 new FixtureWriter.RecidExpect("C", r.c, "null", BASE + 2, 40),
                 new FixtureWriter.RecidExpect("D", r.d, "prealloc", 0, 0),
