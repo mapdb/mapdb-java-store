@@ -98,26 +98,51 @@ public class Wal3FixtureWriterTest {
     }
 
     /**
-     * §5.4 obligation 8, ACROSS PROCESSES in the only sense this test can reach: two independent
-     * invocations into two directories, complete relName&rarr;bytes maps compared.
+     * §5.4 obligation 8, ACROSS PROCESSES, and this time literally.
      *
-     * <p>The generator already compares two runs internally and refuses to publish otherwise, so
-     * this looks redundant and is not: the internal check would still pass if {@code produceTwice}
-     * compared a bundle with itself, and that is exactly the kind of mistake a generator's own
-     * self-check cannot find.
+     * <p>The generator compares two runs internally, but both live in ONE JVM and share every
+     * JVM-wide seed, so an output depending on an identity hash code, a hash-map iteration order
+     * or a lazily initialised static would agree with itself and still differ between runs. This
+     * test's first draft called two {@code main()}s in the surefire JVM "across processes"; the
+     * C2j review's finding 4 is that a name is a claim, and this one was false. It now spawns a
+     * real JVM running the documented CLI.
+     *
+     * <p>The comparison is over the COMPLETE published tree — both bundles and both sidecars —
+     * because {@code fragment.tsv} does not exist yet when {@code produceTwice} runs and is
+     * therefore the one obligation the generator structurally cannot assert about itself.
      */
     @Test
-    public void twoInvocationsAgreeByteForByte() throws IOException {
-        File a = out(), b = out();
-        generate(a);
-        generate(b);
+    public void twoProcessesAgreeByteForByte() throws Exception {
+        File a = generateInAChildProcess(), b = generateInAChildProcess();
         for (String id : new String[]{Wal3FixtureWriter.TAIL_ID, Wal3FixtureWriter.CLEANED_ID})
-            assertEquals(id + " is not deterministic across two invocations",
+            assertEquals(id + " is not deterministic across two processes",
                     describe(new File(a, id)), describe(new File(b, id)));
-        assertEquals("fragment.tsv is not deterministic across two invocations",
-                read(new File(a, "fragment.tsv")), read(new File(b, "fragment.tsv")));
-        assertEquals("layout.tsv is not deterministic across two invocations",
-                read(new File(a, "layout.tsv")), read(new File(b, "layout.tsv")));
+        for (String side : new String[]{"fragment.tsv", "layout.tsv"})
+            assertEquals(side + " is not deterministic across two processes",
+                    read(new File(a, side)), read(new File(b, side)));
+        // The whole tree, not just the parts named above: a generator that grew a third output
+        // would otherwise be compared by nothing.
+        assertEquals("the published trees differ", describeTree(a), describeTree(b));
+    }
+
+    /**
+     * Runs the documented generator CLI in a SEPARATE JVM and returns its output directory.
+     *
+     * <p>Same command the class javadoc publishes and the sync script will run, built from this
+     * JVM's own {@code java.home} and classpath so it needs no build-tool cooperation.
+     */
+    private File generateInAChildProcess() throws Exception {
+        File dir = out();
+        String java = new File(new File(System.getProperty("java.home"), "bin"), "java").getPath();
+        Process p = new ProcessBuilder(java, "-ea",
+                "-cp", System.getProperty("java.class.path"),
+                Wal3FixtureWriter.class.getName(),
+                "--out", dir.getAbsolutePath(), "--force", "--quiet")
+                .redirectErrorStream(true)
+                .start();
+        String output = new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+        assertEquals("the generator child process failed:\n" + output, 0, p.waitFor());
+        return dir;
     }
 
     /** The two shapes must be genuinely different, or one of them is testing nothing. */
@@ -172,16 +197,23 @@ public class Wal3FixtureWriterTest {
     }
 
     /**
-     * Falsification: the §5.3.1 witnesses must DEPEND on the workload's shaping.
+     * The three REJECTED candidate workloads, measured.
      *
-     * <p>Without this, "the generator asserts every row" and "the generator asserts nothing" look
-     * identical from outside — every row could be satisfied by accident of the engine's default
-     * behaviour rather than by the transactions chosen to produce it. Each case below removes one
-     * shaping decision and requires the generator to REFUSE, naming the row it lost. The
-     * §5.3-literal case is the measurement that forced this workload in the first place.
+     * <p>What this pins, stated narrowly because the name it first carried
+     * ("witnessesDependOnTheShaping") claimed more than the inputs deliver: all three of these
+     * lose §5.3.1 <b>row 1</b>. They are the history of how §5.3's table was arrived at, not a
+     * per-witness falsification — two of them change the checkpoint's position and the third
+     * tests a rewrite that was proposed and rejected, and none of them removes a single adopted
+     * shaping step. The C2j review's finding 6 is exactly this workstream's recurring defect, a
+     * test whose name claims a property its inputs never exercise.
+     *
+     * <p>The per-step falsifiers are {@link #eachShapingStepIsLoadBearing} and
+     * {@link #rowFiveIsInvisibleToThisGenerator}; the per-WITNESS-ROW falsifiers are
+     * {@code derive.py --self-test}'s, which mutates the model once per row, declares each case's
+     * exact consequent failure set, and refuses to let a row exist without a case.
      */
     @Test
-    public void witnessesDependOnTheShaping() throws IOException {
+    public void rejectedCandidateWorkloadsMeasured() throws IOException {
         // §5.3 as literally written: checkpoint after T3, no shaping. The cleaner's image covers
         // F's 1.2 MB, which overflows the segment holding it, so the forced mark lands as section
         // 0 of the NEXT segment. That is the finding that moved the checkpoint: adding segments
@@ -231,6 +263,58 @@ public class Wal3FixtureWriterTest {
         assertEquals("dropping shapeC no longer produces the shape this test is about",
                 "mark=2:1 retained=[2, 3, 4] activeSections=1", Wal3FixtureWriter.describeShape(dir));
         Wal3FixtureWriter.gradeCleaned(dir);   // accepted: rows 1,2,3,4,6 all hold without shapeC
+    }
+
+    /**
+     * Each ADOPTED shaping step, removed on its own, and what it costs.
+     *
+     * <p>This is the test {@link #rejectedCandidateWorkloadsMeasured} was mistakenly named for.
+     * The rotation pair is two commits because rollover is tested BEFORE a section is appended,
+     * and each half is removed separately rather than the pair as a unit — removing the pair
+     * together would show only that "some rotation is needed", which is not the claim §5.3 makes.
+     *
+     * <p>The remaining adopted step, {@code shapeC}, is falsified in
+     * {@link #rowFiveIsInvisibleToThisGenerator}: it cannot be falsified here, because the row it
+     * exists for is the one this generator cannot see.
+     */
+    @Test
+    public void eachShapingStepIsLoadBearing() throws IOException {
+        // No rotation at all: the log never opens a third segment, so `middle` and `active` are
+        // the same file and row 1 is lost.
+        assertEquals("dropping the rotation pair no longer produces the shape this test pins",
+                "mark=2:1 retained=[2, 3] activeSections=3", shapeOf("shaped-no-rotate"));
+        expectRefusal("shaped-no-rotate", "row 1 requires exactly three retained segments");
+
+        // Only the half that CROSSES segmentBytes. This is the case the pair exists for: the
+        // oversized section joins the segment it overflows, so nothing has rotated yet.
+        assertEquals("the oversized commit now rotates on its own, which would make the second "
+                        + "half of the rotation pair unnecessary — read StoreWAL.java:1688 before "
+                        + "changing this expectation",
+                "mark=2:1 retained=[2, 3] activeSections=4", shapeOf("shaped-half-rotate"));
+        expectRefusal("shaped-half-rotate", "row 1 requires exactly three retained segments");
+    }
+
+    /** relPath -> length + sha for every file under {@code root}, recursively. */
+    private static String describeTree(File root) throws IOException {
+        List<String> rows = new ArrayList<>();
+        collect(root, root.toPath(), rows);
+        rows.sort(null);
+        return String.join("", rows);
+    }
+
+    private static void collect(File dir, java.nio.file.Path root, List<String> into)
+            throws IOException {
+        File[] kids = dir.listFiles();
+        if (kids == null) return;
+        for (File f : kids) {
+            if (f.isDirectory()) {
+                collect(f, root, into);
+                continue;
+            }
+            byte[] raw = Files.readAllBytes(f.toPath());
+            into.add(root.relativize(f.toPath()) + "\t" + raw.length + "\t"
+                    + FixtureWriter.sha256Hex(raw) + "\n");
+        }
     }
 
     private String shapeOf(String variant) throws IOException {

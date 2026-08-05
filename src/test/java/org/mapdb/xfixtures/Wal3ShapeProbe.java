@@ -26,10 +26,13 @@ import java.util.Arrays;
  *   python3 ../todo/store-wal3/probes/dump-bundle.py &lt;dir&gt;
  * </pre>
  *
- * <p>Every variant ends in the final logical state §5.3 pins &mdash; A live(n+5,120), B live(n+1,0),
- * C null, D prealloc, E deleted, F live(n+4,1200000) &mdash; and asserts it before closing, so a
- * variant that reaches the shape by changing what the fixture MEANS fails here rather than in
- * review. This is a probe, not the generator: it publishes nothing and pins nothing.
+ * <p>Every variant that could become the generator's workload ends in the final logical state §5.3
+ * pins &mdash; A live(n+5,120), B live(n+1,0), C null, D prealloc, E deleted, F live(n+4,1200000)
+ * &mdash; and asserts it before closing, so a variant that reaches the shape by changing what the
+ * fixture MEANS fails here rather than in review. The one exception is
+ * {@code shaped-half-rotate}, which exists precisely to show that half of a state-preserving PAIR
+ * is not state-preserving; it returns before the assertion and says so in place. This is a probe,
+ * not the generator: it publishes nothing and pins nothing.
  */
 public final class Wal3ShapeProbe {
 
@@ -142,6 +145,29 @@ public final class Wal3ShapeProbe {
                     t4(s, r);
                     shapeRotate(s, r);
                     break;
+                case "shaped-no-rotate": // the adopted workload MINUS shapeRotate
+                    t1(s, r); t2(s, r);
+                    s.checkpoint();
+                    t3(s, r);
+                    shapeC(s, r);
+                    t4(s, r);
+                    break;
+                case "shaped-half-rotate":
+                    // Only the half of shapeRotate that CROSSES segmentBytes, without the commit
+                    // that lands alone in the segment it opens. This is the case the pair exists
+                    // for. It ends with A holding the oversized payload, so it does NOT reach
+                    // §5.3's final state and is measured for SHAPE only — see the guard below.
+                    t1(s, r); t2(s, r);
+                    s.checkpoint();
+                    t3(s, r);
+                    shapeC(s, r);
+                    t4(s, r);
+                    s.update(r.a, FixtureWriter.payload(BASE + 7, (int) SEGMENT_BYTES),
+                            FixtureWriter.RAW);
+                    s.commit();
+                    FixtureWriter.check(s.cleanerBytesWritten() > 0,
+                            "the checkpoint wrote no image: this variant is not a CLEANED shape");
+                    return;   // deliberately skips assertFinalState; `finally` still closes
                 case "shaped": // the candidate the measurements above argue for
                     t1(s, r); t2(s, r);
                     s.checkpoint();

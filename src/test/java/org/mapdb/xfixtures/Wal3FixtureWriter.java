@@ -514,9 +514,13 @@ public final class Wal3FixtureWriter {
     }
 
     /**
-     * Grades an arbitrary namespace directory against §5.3's self-check and §5.3.1's six witness
-     * rows, exactly as the generator grades its own output. Throws {@link AssertionError} naming
-     * the first row that fails.
+     * Grades an arbitrary namespace directory against §5.3's self-check and the FIVE §5.3.1 rows
+     * {@link #checkCleaned} can decide — 1, 2, 3, 4 and 6, never 5 — exactly as the generator
+     * grades its own output. Throws {@link AssertionError} naming the first row that fails.
+     *
+     * <p>"Six" is what this javadoc said until the C2j review, and it was the same false claim
+     * {@code checkCleaned}'s had already been corrected for: a fix applied to one of two comments
+     * describing the same method is a fix that did not happen.
      *
      * <p>Exists so a candidate workload can be FALSIFIED rather than only confirmed: the test
      * runs the shape probe's rejected variants through this and requires each to be refused for
