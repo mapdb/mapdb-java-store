@@ -79,6 +79,25 @@ public class Wal3FixtureWriterTest {
     }
 
     /**
+     * §5.4 obligation 7 for the output directory: a `--force` rerun over a directory holding
+     * anything else must be REFUSED, not quietly republished around.
+     */
+    @Test
+    public void refusesToPublishBesideStrayFiles() throws IOException {
+        File dir = out();
+        generate(dir);
+        Files.write(new File(dir, "leftover.tsv").toPath(), new byte[]{1});
+        try {
+            generate(dir);
+            fail("the generator published into a directory holding a stray file; the sync script "
+                    + "consumes everything in that directory");
+        } catch (AssertionError e) {
+            assertTrue("refused, but not for the stray file: " + e.getMessage(),
+                    e.getMessage() != null && e.getMessage().contains("leftover.tsv"));
+        }
+    }
+
+    /**
      * §5.4 obligation 8, ACROSS PROCESSES in the only sense this test can reach: two independent
      * invocations into two directories, complete relName&rarr;bytes maps compared.
      *

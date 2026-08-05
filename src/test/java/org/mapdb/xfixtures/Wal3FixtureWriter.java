@@ -737,6 +737,17 @@ public final class Wal3FixtureWriter {
         Files.write(new File(out, "fragment.tsv").toPath(), frag.getBytes(StandardCharsets.UTF_8));
         Files.write(new File(out, "layout.tsv").toPath(),
                 layout(tail, cleaned).getBytes(StandardCharsets.UTF_8));
+
+        // §5.4 obligation 7 applied to the OUTPUT directory, not just to the scratch namespaces.
+        // A `--force` rerun over a directory holding anything else republishes the two bundles
+        // and leaves the rest in place, and the sync script would then pick up whatever was
+        // there. Checked rather than deleted: `--out` is a path the caller chose, and silently
+        // emptying it is a bigger risk than refusing to publish into it.
+        List<String> stray = new ArrayList<>(Arrays.asList(out.list()));
+        stray.removeAll(Arrays.asList(TAIL_ID, CLEANED_ID, "fragment.tsv", "layout.tsv"));
+        check(stray.isEmpty(), "the output directory also holds " + stray + "; a generator's "
+                + "output directory must contain exactly the two bundles and the two sidecars, "
+                + "because everything in it is what the sync script will consume");
         if (!quiet) for (Bundle b : new Bundle[]{tail, cleaned}) {
             System.out.println("wrote " + b.id + "/ (" + b.image.size() + " segments):");
             System.out.print(describe(b.image).replaceAll("(?m)^", "  "));
