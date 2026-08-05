@@ -383,9 +383,21 @@ public final class Wal3FixtureWriter {
     }
 
     /**
-     * §5.3's self-check and §5.3.1's six witness rows, returned as the layout index §5.3.1 asks
-     * the generator to publish. Rows 1-5 are re-derived independently by
-     * {@code derive.check_witnesses} from the same bytes; row 6 exists only here.
+     * §5.3's self-check and FIVE of §5.3.1's six witness rows, returned as the layout index
+     * §5.3.1 asks the generator to publish.
+     *
+     * <p>Which five, stated precisely because "checks §5.3.1" would be a false claim. Rows 1, 2,
+     * 3, 4 and 6 are checked here. **Row 5 is not** — it asks whether the middle segment's second
+     * section holds an entry admitting a size-preserving {@code T_APPEND} rewrite, which means
+     * decoding the entry stream and searching for a replacement encoding of exactly the same
+     * length. That is `derive._stranded_append`'s job and reimplementing it here would be a
+     * second entry codec to keep in step with the first. So the shaping transaction that exists
+     * for row 5 ({@link #cleanedWorkload}'s {@code update(C, ...)} pair) has its necessity
+     * established by `xcheck_bundles.py`, not by this class or by the java gate.
+     *
+     * <p>Rows 1-5 are also re-derived independently by {@code derive.check_witnesses} from the
+     * same bytes, so the four checked in both places are checked by two codecs. Row 6 exists
+     * ONLY here: {@code segmentBytes} is a generator setting and leaves no trace in the bytes.
      */
     private static Map<String, Long> checkCleaned(List<Seg> segs) {
         checkCommon(segs, CLEANED_ID);

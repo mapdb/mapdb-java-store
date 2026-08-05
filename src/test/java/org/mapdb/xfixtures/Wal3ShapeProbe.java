@@ -135,6 +135,13 @@ public final class Wal3ShapeProbe {
                     s.update(r.f, FixtureWriter.payload(BASE + 4, 1_200_000), FixtureWriter.RAW);
                     s.commit();
                     break;
+                case "shaped-no-C": // the adopted workload MINUS shapeC, to show shapeC matters
+                    t1(s, r); t2(s, r);
+                    s.checkpoint();
+                    t3(s, r);
+                    t4(s, r);
+                    shapeRotate(s, r);
+                    break;
                 case "shaped": // the candidate the measurements above argue for
                     t1(s, r); t2(s, r);
                     s.checkpoint();

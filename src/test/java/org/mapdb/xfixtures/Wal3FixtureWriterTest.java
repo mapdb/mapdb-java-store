@@ -207,6 +207,32 @@ public class Wal3FixtureWriterTest {
         expectRefusal("ckpt-after-t2-shaped", "row 1 requires exactly three retained segments");
     }
 
+    /**
+     * The one shaping step this class CANNOT justify, made executable rather than argued.
+     *
+     * <p>`shapeC` exists for §5.3.1 row 5, and row 5 is the row {@link Wal3FixtureWriter} does not
+     * check — deciding it means decoding the entry stream and searching for a size-preserving
+     * replacement encoding. So dropping `shapeC` produces a bundle this generator's own grading
+     * ACCEPTS, and only `derive.check_witnesses` refuses:
+     *
+     * <pre>
+     *   FAIL stranded-append-candidate: §5.3.1 row 5: no entry in the selected section admits a
+     *   stranded T_APPEND: entry 0 (recid 1): a later section touches it, which would clear the
+     *   skip set before the audit
+     * </pre>
+     *
+     * This test asserts the java side's BLINDNESS, which is the only part of that it can own. If
+     * it ever starts failing, the generator has grown a row-5 check and this test should become
+     * an `expectRefusal` instead — which is a better outcome, not a regression.
+     */
+    @Test
+    public void rowFiveIsInvisibleToThisGenerator() throws IOException {
+        File dir = probe("shaped-no-C");
+        assertEquals("dropping shapeC no longer produces the shape this test is about",
+                "mark=2:1 retained=[2, 3, 4] activeSections=1", Wal3FixtureWriter.describeShape(dir));
+        Wal3FixtureWriter.gradeCleaned(dir);   // accepted: rows 1,2,3,4,6 all hold without shapeC
+    }
+
     private String shapeOf(String variant) throws IOException {
         return Wal3FixtureWriter.describeShape(probe(variant));
     }
