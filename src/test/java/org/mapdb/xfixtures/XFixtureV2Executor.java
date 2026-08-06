@@ -50,8 +50,8 @@ import static org.junit.Assert.fail;
  * </ol>
  *
  * <h2>Consumption accounting, in two halves</h2>
- * Every {@code action}, {@code bytes} and {@code reopen} row addressed to the cell being run must
- * be consumed by a handler ({@link Consumption}). Of java's three oracle rows only the
+ * Every {@code action}, {@code bytes}, {@code reopen} and {@code post} row addressed to the cell
+ * being run must be consumed by a handler ({@link Consumption}). Of java's three oracle rows only the
  * {@code action} has a failure of its own — the whole-file {@code post} hash subsumes a
  * byte-at-offset assertion, and <em>nothing at all</em> observes a dropped {@code reopen} — so
  * deleting the reopen call turns the suite red here and nowhere else.
@@ -132,9 +132,10 @@ final class XFixtureV2Executor {
         for (XFixtureManifest.V2.Reopen r : m.reopens)
             if (ENGINE.equals(r.engine) && !ran.contains(r.fixtureId + "/" + r.mode))
                 orphans.add("reopen " + r.fixtureId + "/" + r.mode + " " + r.family);
-        // `post` is the FOURTH addressed row type and contract §2.3's consumption sentence does
-        // not name it, so nothing on either side of the fence caught a post row addressed to a
-        // cell no engine runs — round 2 proved it green. Covered here, and §2.3 now says so.
+        // `post` is the FOURTH addressed row type. Round 2 found nothing on either side of the
+        // fence caught one addressed to a cell no engine runs; §2.3 now names it, and it has a
+        // per-cell debt as well (round 3 — the orphan case is this loop's, the dropped-by-its-own
+        // -handler case is the accountant's).
         for (XFixtureManifest.V2.Post p : m.posts)
             if (ENGINE.equals(p.engine) && !ran.contains(p.fixtureId + "/" + p.mode))
                 orphans.add("post " + p.fixtureId + "/" + p.mode + " " + p.relName);
@@ -161,6 +162,12 @@ final class XFixtureV2Executor {
             owed.owe("bytes " + b.relName + "@" + b.offset, b);
         for (XFixtureManifest.V2.Reopen r : m.reopensOf(e.fixtureId, ENGINE, e.mode))
             owed.owe("reopen " + r.family, r);
+        // `post` too. Round 2 added it to the SUITE-WIDE half only, and codex showed the gap that
+        // leaves: a post row addressed to a cell that RUNS could be skipped by its handler and the
+        // two-sided unnamed-input rule would independently re-verify the same file, masking the
+        // drop. The orphan case is the suite-wide check's; this is the other half.
+        for (XFixtureManifest.V2.Post p : m.postsOf(e.fixtureId, ENGINE, e.mode))
+            owed.owe("post " + p.relName, p);
 
         Map<String, byte[]> inputs = new LinkedHashMap<>();
         for (XFixtureManifest.V2.FileRow f : m.filesOf(e.fixtureId)) {
@@ -183,7 +190,7 @@ final class XFixtureV2Executor {
         // against — the C4 probe made the same call for the same reason.
         Map<String, byte[]> after = capture(cell);
         assertBytesRows(ctx, e, after, owed);
-        assertPostState(ctx, e, after, inputs);
+        assertPostState(ctx, e, after, inputs, owed);
         assertReopen(ctx, e, target, owed);
         owed.requireAllConsumed();
     }
@@ -261,7 +268,7 @@ final class XFixtureV2Executor {
      * committed section. So the pair "rw commits, ro refuses" is carried by the corpus, and a
      * refusal that fired in both modes would fail that cell.
      */
-    private void assertWriteRefused(String ctx, XFixtureManifest.V2.Expect e, StoreWAL s) {
+    void assertWriteRefused(String ctx, XFixtureManifest.V2.Expect e, StoreWAL s) {
         DBException refusal = null;
         boolean accepted;
         try {
@@ -271,13 +278,29 @@ final class XFixtureV2Executor {
             accepted = false;
             refusal = x;
         }
-        assertTrue(ctx + ": a write through the read-only handle was ACCEPTED", !accepted);
-        assertTrue(ctx + ": the read-only refusal does not say so: " + refusal.getMessage(),
-                refusal.getMessage() != null && refusal.getMessage().contains("open read-only"));
+        // ONE assertion, not two. The campaign's own runner showed why: on a writable handle
+        // `refusal` is null, so deleting the "accepted" half made the message half fire (or NPE) —
+        // two statements that could only ever be killed by each other, which is a pair of checks
+        // where the code has one claim. The claim is "the write was refused AND the refusal names
+        // the mode", and it is now one statement with one red.
+        String outcome = accepted ? "the write was ACCEPTED"
+                : "refused with: " + refusal.getMessage();
+        assertTrue(ctx + ": the probe accepted a writable handle or a refusal that does not name "
+                        + "the read-only mode — " + outcome,
+                !accepted && refusal.getMessage() != null
+                        && refusal.getMessage().contains("open read-only"));
         // LAST, and inside this method rather than beside its call. Round 2 proved the difference:
         // with the recording at the call site, deleting `assertWriteRefused(...)` alone and keeping
         // the `add` left the whole gate green — the set observed that the bookkeeping ran, not that
-        // the probe did. Downstream of both assertions, the set cannot be reached without them.
+        // the probe did.
+        //
+        // Round 3 proved the NEXT layer, and both reviewers found it: the assertions above can be
+        // VACATED rather than skipped. No corpus input can reach their red — a conforming engine
+        // refuses the write — so deleting either left 2,587 tests green while the recording still
+        // attested that the probe "ran". They are given a red by
+        // XFixtureCorpusTest#the_read_only_write_probe_fires, which hands this method a writable
+        // handle and a wrong-reason refusal and requires the red for each. That is the same
+        // treatment assertFamily gets, for the same reason.
         readOnlyHandlesProbed.add(e.fixtureId + "/" + e.mode);
     }
 
@@ -428,7 +451,8 @@ final class XFixtureV2Executor {
      * {@code deleted} shapes actually live.
      */
     private void assertPostState(String ctx, XFixtureManifest.V2.Expect e,
-                                 Map<String, byte[]> after, Map<String, byte[]> inputs) {
+                                 Map<String, byte[]> after, Map<String, byte[]> inputs,
+                                 Consumption owed) {
         List<XFixtureManifest.V2.Post> posts = m.postsOf(e.fixtureId, ENGINE, e.mode);
         assertTrue(ctx + ": no post rows — a cell that asserts nothing about the directory it just "
                 + "opened is not a check", !posts.isEmpty());
@@ -464,6 +488,9 @@ final class XFixtureV2Executor {
                 }
                 default -> fail(where + ": unknown disposition verb");
             }
+            // AFTER the disposition was asserted, never before: a row consumed on entry would be
+            // accounted for by a handler that had not yet graded it.
+            owed.consume("post " + p.relName, p);
         }
         for (Map.Entry<String, byte[]> in : inputs.entrySet()) {
             if (named.contains(in.getKey())) continue;

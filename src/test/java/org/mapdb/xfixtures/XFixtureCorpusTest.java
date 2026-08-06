@@ -43,21 +43,23 @@ import static org.junit.Assert.fail;
  * for, and it is now the SAME rule for both roots ({@link XFixtureV2Executor#requireSomeOracle}).
  *
  * <h2>The deletion campaign</h2>
- * Fourteen checks were removed one at a time and the suite required to go red for the reason each
- * names: the reopen execution, the bytes execution, the action execution, the action with the bytes
- * assertion neutralised beside it (so the {@code modified:279} post row is what fires), the
- * per-cell accountant's call site, the suite-wide addressing check, the {@code ro} mode SELECTION,
- * the {@code ro} write probe's call, the opener dispatch, the two-sided file-set rule, the
- * {@code bytes} value equality, the {@code assertFamily} call, the accept-cell oracle guard, and
- * the two {@code applies} set equalities.
+ * Every check in the executor and in this class is deleted one at a time and the suite must go red
+ * for the reason each names — 26 mutants, all killed, in
+ * {@code scratchpad/mut.py} + {@code mutants.sh}. Three review rounds grew it from 10.
  *
- * <p><b>Eight of them are green with the check deleted unless something supplies an input</b>, and
- * that is the shape both C5j reviews were about. Seven are closed with DOCTORED manifests in this
- * file — the round-one draft had three of them and shipped the other four unguarded. The eighth is
- * the reader contract, which cannot be closed that way: nothing observes a leaf assertion, so what
- * is proved instead is that it FIRES ({@link #the_reader_contract_is_not_vacuous}), which is a
- * different claim and is labelled as one. The {@code ro} write probe was the same shape and is no
- * longer, because {@link XFixtureV2Executor#readOnlyHandlesProbed} makes the call observable.
+ * <p><b>Most of those checks are green with the check deleted unless something supplies an
+ * input</b>, and that is what all three rounds of both reviews were about. They are closed with
+ * DOCTORED manifests routed through the PRODUCTION path — never by calling the check directly,
+ * which is a mistake this slice made twice and which proves the method while leaving its call
+ * unobserved. Where a check's red is unreachable from any conforming corpus, it gets a direct
+ * firing probe instead ({@link #the_read_only_write_probe_fires},
+ * {@link #the_reopen_family_predicate_discriminates}) and the difference is labelled.
+ *
+ * <p>Two things carry an honest label rather than a mutant, because neither can have one:
+ * {@link #the_reader_contract_is_not_vacuous} (nothing observes a leaf assertion, so what is proved
+ * is that it FIRES), and the `action` oracle count pin, whose red is masked on this corpus —
+ * removing the action row kills the cell at the `bytes` range check first, and every deeper
+ * stripping dies to another rule in turn (lesson h).
  */
 public class XFixtureCorpusTest {
 
@@ -294,6 +296,47 @@ public class XFixtureCorpusTest {
         assertTrue("the read-only handle ACCEPTED the write", refusal != null);
         assertTrue("the refusal does not name the mode: " + refusal.getMessage(),
                 refusal.getMessage().contains("open read-only"));
+    }
+
+    /**
+     * The read-only probe's two assertions FIRE — which no corpus input can show.
+     *
+     * <p>A conforming engine refuses the write, so the red side of both assertions is unreachable
+     * from the corpus and both could be deleted with 2,587 tests green while
+     * {@link XFixtureV2Executor#readOnlyHandlesProbed} still attested that the probe "ran". Both
+     * round-3 reviewers found it; one noted the campaign had written the mutant and never run it,
+     * which is a survivor with no disposition at all.
+     *
+     * <p>So the method is handed the two inputs the corpus cannot produce: a WRITABLE handle, which
+     * must trip the "accepted" assertion, and a handle that refuses for the wrong reason, which must
+     * trip the message assertion. This is the treatment {@code assertFamily} already gets.
+     */
+    @Test public void the_read_only_write_probe_fires() throws Exception {
+        XFixtureManifest.V2 m = manifest();
+        File session = tempDir("xfcorpus-rofire");
+        XFixtureV2Executor.gunzipAll(m, ROOT, session);
+        XFixtureV2Executor x = new XFixtureV2Executor(m, session);
+        XFixtureManifest.V2.Expect ro = javaCell(m, "wal3-java-cleaned", "ro");
+
+        org.mapdb.store.StoreWAL w = new org.mapdb.store.StoreWAL(
+                new File(stage(m, "wal3-java-cleaned", session, tempDir("xfrofire-rw")), "x"));
+        try {
+            refuses("a WRITABLE handle", () -> x.assertWriteRefused("probe", ro, w));
+        } finally {
+            w.close();
+        }
+        assertTrue("the probe recorded a cell it had just refused",
+                x.readOnlyHandlesProbed.isEmpty());
+
+        // A handle that refuses for a different reason: closed, and not read-only, so the refusal
+        // is `StoreClosed` and its message cannot name the mode.
+        org.mapdb.store.StoreWAL closed = new org.mapdb.store.StoreWAL(
+                new File(stage(m, "wal3-java-cleaned", session, tempDir("xfrofire-closed")), "x"));
+        closed.close();
+        refuses("a refusal that does not name the mode",
+                () -> x.assertWriteRefused("probe", ro, closed));
+        assertTrue("the probe recorded a cell whose refusal it had just rejected",
+                x.readOnlyHandlesProbed.isEmpty());
     }
 
     private static File stage(XFixtureManifest.V2 m, String fid, File session, File into)
@@ -571,6 +614,64 @@ public class XFixtureCorpusTest {
                 caught.getMessage() != null && caught.getMessage().contains(because));
     }
 
+    /**
+     * The oracle count pins fire when the corpus stops feeding an executor.
+     *
+     * <p>They are C5 plan §7's defence against "an execution path absent from the corpus with every
+     * assertion still passing" — the defect C5s's round 3 shipped for two engines — and round 3
+     * found all three deletable with the gate green and no mutant naming them.
+     *
+     * <p><b>The `action` pin is NOT here, and that is the honest label rather than an omission.</b>
+     * Removing the action row kills the cell first: the file stays 186 bytes and the `bytes` range
+     * check fires, and every deeper stripping dies to the post row, the reopen, or the oracle guard
+     * in turn. Its red is masked on this corpus and cannot be reached through the production path,
+     * so a doctored input would report KILLED while proving the range rule (lesson h). What holds
+     * it up instead is the `action` executor's own reds, which are several.
+     */
+    @Test public void the_oracle_count_pins_fire() throws Exception {
+        refusesSuite("a corpus with no java `bytes` row",
+                doctored(t -> dropRows(t, "bytes\tdiv-wal3-lsn-exhausted\tjava\trw\t")),
+                "carries no `bytes` row for java");
+        refusesSuite("a corpus with no java `reopen` row",
+                doctored(t -> dropRows(t, "reopen\tdiv-wal3-lsn-exhausted\tjava\trw\t")),
+                "carries no `reopen` row for java");
+    }
+
+    /**
+     * A {@code post} row addressed to a cell that RUNS is consumed and graded — the other half of
+     * codex's round-3 finding 1, and the {@code unchanged} verb's first input.
+     *
+     * <p>Round 2 gave {@code post} a suite-wide addressing check and no per-cell debt, so a handler
+     * that skipped a row addressed to a real cell was masked: the two-sided unnamed-input rule
+     * independently re-verifies the same file, and "parses and drops" reported green. The per-cell
+     * accountant now owes every post row.
+     *
+     * <p>Both directions, because a verb that always holds is not a check: the same {@code unchanged}
+     * row is true of a segment the cell leaves alone and false of the one Q8's action grows.
+     */
+    @Test public void an_unchanged_post_row_is_graded() throws Exception {
+        String cell = "post\tdiv-wal3-lsn-exhausted\tjava\trw\t";
+        // TRUE: the low segment is not touched by the commit.
+        runEveryJavaCell(doctored(t -> t + cell + "x.wal.0000000000000002\tunchanged\n"));
+        // FALSE: the active segment is exactly what the action appends to. Its real row is
+        // `modified:279:…`, so this REPLACES it — adding a second row for one file is a duplicate
+        // the parser refuses, which would prove the parser rather than the verb.
+        refusesSuite("an `unchanged` row over the segment the action grew",
+                doctored(t -> t.replaceAll(
+                        "post\tdiv-wal3-lsn-exhausted\tjava\trw\tx\\.wal\\.0000000000000004\tmodified:[^\n]*",
+                        "post\tdiv-wal3-lsn-exhausted\tjava\trw\tx.wal.0000000000000004\tunchanged")),
+                "bytes changed");
+    }
+
+    private static String dropRows(String text, String prefix) {
+        StringBuilder out = new StringBuilder();
+        for (String line : text.split("\n", -1)) {
+            if (line.startsWith(prefix)) continue;
+            out.append(line).append('\n');
+        }
+        return out.substring(0, out.length() - 1);
+    }
+
     private static XFixtureManifest.V2.Expect javaCell(XFixtureManifest.V2 m, String fid,
                                                        String mode) {
         for (XFixtureManifest.V2.Expect e : m.expects)
@@ -599,8 +700,14 @@ public class XFixtureCorpusTest {
                         + "consecutive: 12 at offset 187 after 9"));
         refusedFamily("a corruption verdict from another rule entirely", "S2",
                 new DBException.DataCorruption("WAL file x.wal is not a v3 segment"));
+        // The WHOLE S2 message, on a non-corruption class — so the class predicate is the only
+        // thing that can refuse it. Round 3 caught the earlier form omitting the
+        // "WAL segment <name>: " prefix, which meant the message predicate rejected it and the
+        // class predicate could be deleted with the gate green: one check masking another on the
+        // same input, which is lesson (h) inside a discrimination battery.
         refusedFamily("an operational failure wearing the right words", "S2",
-                new DBException("section LSN 1 at offset 2 does not follow 0"));
+                new DBException("WAL segment x.wal.4: section LSN 1 at offset 2 "
+                        + "does not follow 0"));
         refusedFamily("a family this engine has no predicate for", "R4-floor",
                 new DBException.DataCorruption("anything at all"));
         // The pattern matches WHOLE. The first draft used find() on an unanchored fragment while
@@ -663,7 +770,7 @@ public class XFixtureCorpusTest {
         } catch (AssertionError expected) {
             return;
         }
-        fail("the accountant accepted " + what);
+        fail("accepted " + what);
     }
 
     // ------------------------------------------------------------- the root itself
