@@ -43,9 +43,11 @@ import static org.junit.Assert.fail;
  * for, and it is now the SAME rule for both roots ({@link XFixtureV2Executor#requireSomeOracle}).
  *
  * <h2>The deletion campaign</h2>
- * <b>30 NAMED cases</b>, in {@code scratchpad/mut.py} + {@code mutants.sh}: each deletes one check,
- * or one call to one, and the suite must go red for the reason that case names. All 30 kill. Five
- * review rounds grew it from 10.
+ * <b>30 NAMED cases</b>, in {@code scratchpad/mut.py} + {@code mutants.sh}. Each mutates one named
+ * check, one named call to one, or one named combination — most are deletions, but {@code roorder}
+ * MOVES a statement, {@code romode} REPLACES an opener selection, and {@code actionbytes} and
+ * {@code applieseq} each touch more than one site on purpose. The suite must then go red for the
+ * reason that case names. All 30 kill.
  *
  * <p><b>It is a named campaign, not an exhaustive sweep,</b> and the difference is not pedantry —
  * an earlier version of this paragraph claimed the sweep and round 4 disproved it by deleting
