@@ -51,10 +51,11 @@ import static org.junit.Assert.fail;
  *
  * <h2>Consumption accounting, in two halves</h2>
  * Every {@code action}, {@code bytes}, {@code reopen} and {@code post} row addressed to the cell
- * being run must be consumed by a handler ({@link Consumption}). Of java's three oracle rows only the
+ * being run must be consumed by a handler ({@link Consumption}). Of those four rows only the
  * {@code action} has a failure of its own — the whole-file {@code post} hash subsumes a
- * byte-at-offset assertion, and <em>nothing at all</em> observes a dropped {@code reopen} — so
- * deleting the reopen call turns the suite red here and nowhere else.
+ * byte-at-offset assertion, a dropped {@code post} row is re-verified by the two-sided
+ * unnamed-input rule, and <em>nothing at all</em> observes a dropped {@code reopen} — so deleting
+ * any of those three calls turns the suite red here and nowhere else.
  *
  * <p>That is only half the rule, and shipping it as the whole rule is what both C5j reviewers
  * broke independently: an accountant built per cell cannot see a row addressed to a cell that does
@@ -107,8 +108,8 @@ final class XFixtureV2Executor {
     }
 
     /**
-     * Every {@code action}/{@code bytes}/{@code reopen} row addressed to java must name a cell this
-     * engine actually runs.
+     * Every {@code action}/{@code bytes}/{@code reopen}/{@code post} row addressed to java must name
+     * a cell this engine actually runs.
      *
      * <p>Per-cell consumption cannot see this, and both reviewers proved it independently: the
      * accountant is built from the rows addressed to the cell BEING RUN, so a row addressed to a
@@ -582,7 +583,8 @@ final class XFixtureV2Executor {
      * The oracle rows one cell owes, and which of them a handler actually ran.
      *
      * <p>Package-private and separately unit-tested, because it is the ONE mechanism standing
-     * between "executes" and "parses and drops" for two of java's three oracle row types.
+     * between "executes" and "parses and drops" for three of the four addressed oracle row types —
+     * every one except {@code action}, which has a failure of its own.
      */
     static final class Consumption {
         private final String ctx;

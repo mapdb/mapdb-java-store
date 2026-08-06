@@ -55,8 +55,8 @@ import static org.junit.Assert.fail;
  * statements in this class that nothing red-flags. What is true is narrower: every check the
  * campaign names has a red that names it.
  *
- * <p><b>Most of those checks are green when deleted unless something supplies an input</b>, which
- * is what every round of both reviews was about. They are closed with DOCTORED manifests
+ * <p><b>Most of those checks are green when deleted unless something supplies an input.</b>
+ * They are closed with DOCTORED manifests
  * routed through the PRODUCTION path — never by calling the check directly, a mistake this slice
  * made twice, which proves the method and leaves its call unobserved. Where a check's red is
  * unreachable from any conforming corpus it gets a direct firing probe instead
@@ -247,14 +247,16 @@ public class XFixtureCorpusTest {
         }
         assertTrue("the direct cell passed through the WAL opener, so the opener column is "
                 + "decoration on this engine", caught != null);
-        assertTrue("it went red for the wrong reason: " + caught.getMessage(),
-                caught.getMessage() != null
-                        && caught.getMessage().contains("but the store opened"));
-        // …and it opened far enough to write. Named separately from the verdict because the two
-        // are independent facts and a future java that refused D1 would keep this one.
-        assertTrue("the misrouted open left no fresh segment behind, so this mutant is measuring "
-                + "less than it says: " + XFixtureV2Executor.listNames(cell2),
-                XFixtureV2Executor.listNames(cell2).contains("x.wal.0000000000000001"));
+        // The verdict AND the file set in one comparison. They are independent facts — a future
+        // java that refused D1 would keep the second and lose the first — but asserting them
+        // separately made the file-set half a leaf that the whole gate could lose without noticing,
+        // which round 8 measured. One equality has one leaf instead of two.
+        assertEquals("the misrouted open's verdict and what it left behind",
+                List.of("but the store opened", "[x, x.lock, x.wal.0000000000000001]"),
+                List.of(caught.getMessage() != null
+                                && caught.getMessage().contains("but the store opened")
+                                ? "but the store opened" : String.valueOf(caught.getMessage()),
+                        XFixtureV2Executor.listNames(cell2).toString()));
     }
 
     // ------------------------------------------------------------- ro, both directions
