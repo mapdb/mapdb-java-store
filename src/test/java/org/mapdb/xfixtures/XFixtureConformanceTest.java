@@ -88,33 +88,21 @@ public class XFixtureConformanceTest {
     }
 
     // ---------- shared resource plumbing ----------
+    //
+    // The v2 halves live in XFixtureV2Executor, which both roots go through; these are the two
+    // thin aliases the v1 flow and the golden tables still need.
 
     private static byte[] resource(String path) throws IOException {
-        try (InputStream in = XFixtureConformanceTest.class.getResourceAsStream(path)) {
-            if (in == null) fail("classpath resource " + path + " is missing");
-            return in.readAllBytes();
-        }
+        return XFixtureV2Executor.resource(path);
     }
 
-    /** Gunzips a blob and checks all three of its pinned identities before it is ever opened. */
     private static byte[] gunzipChecked(String root, String blobName, String relName,
                                         long rawLen, String rawSha, String gzSha) throws IOException {
-        byte[] gz = resource(root + blobName);
-        assertEquals(blobName + ": compressed SHA-256 mismatch", gzSha, FixtureWriter.sha256Hex(gz));
-        ByteArrayOutputStream raw = new ByteArrayOutputStream();
-        try (GZIPInputStream gin = new GZIPInputStream(new ByteArrayInputStream(gz))) {
-            gin.transferTo(raw);
-        }
-        byte[] bytes = raw.toByteArray();
-        assertEquals(relName + ": uncompressed length mismatch", rawLen, bytes.length);
-        assertEquals(relName + ": uncompressed SHA-256 mismatch", rawSha, FixtureWriter.sha256Hex(bytes));
-        return bytes;
+        return XFixtureV2Executor.gunzipChecked(root, blobName, relName, rawLen, rawSha, gzSha);
     }
 
     private static TreeSet<String> listNames(File dir) {
-        String[] names = dir.list();
-        assertTrue("cell dir vanished: " + dir, names != null);
-        return new TreeSet<>(List.of(names));
+        return XFixtureV2Executor.listNames(dir);
     }
 
     // ---------- schema v1 ----------
@@ -223,144 +211,38 @@ public class XFixtureConformanceTest {
 
     // ---------- schema v2 ----------
 
-    /**
-     * Gunzips every v2 fixture file once into {@code <session>/<fixtureId>/<relName>}.
-     *
-     * <p>The per-fixture subdirectory is load-bearing, not tidiness: all three sample bundles name
-     * their segments {@code x.wal.0000000000000001} and up, so a flat map keyed by {@code relName}
-     * would have them overwrite each other and every cell would then run against whichever bundle
-     * happened to be gunzipped last.
-     */
-    private static Map<String, File> gunzipAllV2(XFixtureManifest.V2 m, File session) throws IOException {
-        Map<String, File> pristine = new HashMap<>();
-        for (XFixtureManifest.V2.FileRow f : m.files) {
-            byte[] bytes = gunzipChecked(V2_ROOT, f.blobName(), f.relName, f.rawLen, f.rawSha, f.gzSha);
-            File dir = new File(session, f.fixtureId);
-            assertTrue("cannot create " + dir, dir.isDirectory() || dir.mkdirs());
-            File out = new File(dir, f.relName);
-            Files.write(out.toPath(), bytes);
-            pristine.put(f.fixtureId + "/" + f.relName, out);
-        }
-        return pristine;
-    }
-
-    private void runV2Cell(XFixtureManifest.V2 m, XFixtureManifest.V2.Expect e,
-                           Map<String, File> pristine) throws IOException {
-        String ctx = "v2 cell[" + e.fixtureId + " java " + e.mode + " " + e.verdict + " " + e.opener + "]";
-        assertEquals(ctx + ": this reader executes only the wal3 opener", "wal3", e.opener);
-
-        File cell = tempDir("xfv2cell");
-        Map<String, byte[]> inputs = new LinkedHashMap<>();
-        for (XFixtureManifest.V2.FileRow f : m.filesOf(e.fixtureId)) {
-            File work = new File(cell, f.relName);
-            Files.copy(pristine.get(f.fixtureId + "/" + f.relName).toPath(), work.toPath());
-            inputs.put(f.relName, Files.readAllBytes(work.toPath()));
-        }
-
-        File base = new File(cell, e.openArg);
-        switch (e.verdict) {
-            case "accept": {
-                StoreWAL s = "ro".equals(e.mode) ? StoreWAL.openReadOnly(base) : new StoreWAL(base);
-                try {
-                    List<FixtureWriter.RecidExpect> expects = m.recids.get(e.fixtureId);
-                    assertTrue(ctx + ": accept fixture has no recid rows",
-                            expects != null && !expects.isEmpty());
-                    FixtureWriter.assertReaderContract(s, expects, ctx);
-                } finally {
-                    s.close();
-                }
-                break;
-            }
-            case "reject":
-                // No reject cell reaches this arm from the C3 sample (C4's derived bundles are the
-                // first). It is implemented anyway: a verdict the executor cannot run must fail
-                // loudly, and `default` below would be the only thing catching it otherwise. The
-                // mode is passed through rather than assumed `rw`, so a future `ro reject` cell is
-                // actually probed read-only.
-                assertRejected(ctx, e.opener, e.mode, base);
-                break;
-            default:
-                fail(ctx + ": unknown verdict " + e.verdict);
-        }
-
-        assertPostState(ctx, m, e, cell, inputs);
-        TmpFiles.delete(cell);
-        dirs.remove(cell);
+    /** Gunzips every v2 sample file once into {@code <session>/<fixtureId>/<relName>}. */
+    private static File gunzipAllV2(XFixtureManifest.V2 m, File session) throws IOException {
+        XFixtureV2Executor.gunzipAll(m, V2_ROOT, session);
+        return session;
     }
 
     /**
-     * Checks the cell directory against the manifest's {@code post} rows for this (engine, mode).
+     * The static sample's cells, through the shared v2 executor.
      *
-     * <p>The rule is two-sided, which is the whole point of the D6 post-cardinality amendment: a
-     * file a post row names must match that disposition exactly, and every OTHER input file must
-     * be byte-unchanged. A one-sided check — "the named files are right" — would pass a store that
-     * rewrote every segment it was handed.
+     * <p>The sample is the {@code v2-core} profile — no {@code applies}, {@code action},
+     * {@code bytes} or {@code reopen} rows — so it runs under
+     * {@link XFixtureV2Executor.Rules#unsealedSample}, which keeps the strict "an accept cell owes
+     * a recid oracle" rule. The corpus root buys the relaxation with a distribution seal; this root
+     * has none and does not get it. Which rules apply is stated HERE, at the call site, rather than
+     * inferred from the manifest being graded.
      */
-    private static void assertPostState(String ctx, XFixtureManifest.V2 m,
-                                        XFixtureManifest.V2.Expect e, File cell,
-                                        Map<String, byte[]> inputs) throws IOException {
-        List<XFixtureManifest.V2.Post> posts = m.postsOf(e.fixtureId, "java", e.mode);
-        assertTrue(ctx + ": no post rows — an accept cell that asserts nothing about the directory "
-                + "it just opened is not a check", !posts.isEmpty());
-        TreeSet<String> named = new TreeSet<>();
-        for (XFixtureManifest.V2.Post p : posts) {
-            String where = ctx + " post[" + p.relName + " " + p.verb + "]";
-            assertTrue(where + ": two post rows for one file", named.add(p.relName));
-            File f = new File(cell, p.relName);
-            byte[] was = inputs.get(p.relName);
-            switch (p.verb) {
-                case "unchanged":
-                    assertTrue(where + ": names a file that was not an input", was != null);
-                    assertTrue(where + ": file is gone", f.isFile());
-                    assertArrayEquals(where + ": bytes changed", was, Files.readAllBytes(f.toPath()));
-                    break;
-                case "deleted":
-                    assertTrue(where + ": names a file that was not an input", was != null);
-                    assertTrue(where + ": file is still there", !f.exists());
-                    break;
-                case "created":
-                    assertTrue(where + ": names a file that already existed as an input", was == null);
-                    // fall through to the content check
-                case "truncated":
-                case "modified": {
-                    // Reached by fall-through from `created`, which has already asserted the file
-                    // was NOT an input; when named directly, these two verbs mean the opposite and
-                    // must say so, or a newly created file mislabelled `modified` passes.
-                    if (!"created".equals(p.verb))
-                        assertTrue(where + ": names a file that was not an input", was != null);
-                    assertTrue(where + ": file is missing", f.isFile());
-                    byte[] now = Files.readAllBytes(f.toPath());
-                    assertEquals(where + ": length", p.length, now.length);
-                    assertEquals(where + ": SHA-256", p.sha, FixtureWriter.sha256Hex(now));
-                    break;
-                }
-                default:
-                    fail(where + ": unknown disposition verb");
-            }
-        }
-        // Everything the manifest did NOT name: inputs must be untouched, and no other file may
-        // have appeared. `x.lock` is not exempt here — the sample pins it with a post row, so an
-        // engine that stopped creating it would fail rather than quietly pass a blanket allowance.
-        for (Map.Entry<String, byte[]> in : inputs.entrySet()) {
-            if (named.contains(in.getKey())) continue;
-            File f = new File(cell, in.getKey());
-            assertTrue(ctx + ": input " + in.getKey() + " is gone and no post row says so", f.isFile());
-            assertArrayEquals(ctx + ": input " + in.getKey() + " changed and no post row says so",
-                    in.getValue(), Files.readAllBytes(f.toPath()));
-        }
-        for (String name : listNames(cell)) {
-            assertTrue(ctx + ": unexpected new file " + name,
-                    inputs.containsKey(name) || named.contains(name));
-        }
-    }
-
     @Test public void sample_v2_cells_conform() throws Exception {
         XFixtureManifest.Loaded loaded = XFixtureManifest.load(V2_ROOT);
         assertEquals("the static sample must be schema v2 — it exists to exercise that path",
                 2, loaded.version);
         XFixtureManifest.V2 m = loaded.v2;
         File session = tempDir("xfixtures-v2-session");
-        Map<String, File> pristine = gunzipAllV2(m, session);
+        gunzipAllV2(m, session);
+        XFixtureV2Executor x = new XFixtureV2Executor(
+                m, XFixtureV2Executor.Rules.unsealedSample(), session);
+
+        // The sample is v2-core, in BOTH directions. A root that grew an oracle row would be
+        // running assertions this test's rules never bought, and — since C5 moved the profile
+        // split into the grammar — that is a refusal rather than a widening.
+        assertTrue("the static sample carries an oracle row; it is v2-core through C7",
+                m.applies.isEmpty() && m.actions.isEmpty() && m.bytes.isEmpty()
+                        && m.reopens.isEmpty());
 
         // WHAT SHOULD RUN, derived from a DIFFERENT row type than the one that says what will.
         // An earlier revision only checked that the cells it happened to run covered both modes,
@@ -368,7 +250,8 @@ public class XFixtureConformanceTest {
         // row left the suite green, because another fixture still supplied that mode. A count or a
         // mode set is a projection of the already-truncated input and cannot see the deletion. The
         // `fixture` rows can: every declared fixture owes one java cell per mode, so a missing
-        // `expect` row now contradicts the fixture row that is still there.
+        // `expect` row now contradicts the fixture row that is still there. (The corpus cannot use
+        // this rule — its cell set is legitimately partial — which is what `applies` is for.)
         TreeSet<String> want = new TreeSet<>();
         for (String fixtureId : m.fixtureKinds.keySet())
             for (String mode : XFixtureManifest.MODES) want.add(fixtureId + "/" + mode);
@@ -377,9 +260,12 @@ public class XFixtureConformanceTest {
         TreeSet<String> ran = new TreeSet<>();
         for (XFixtureManifest.V2.Expect e : m.expects) {
             if (!"java".equals(e.engine)) continue;
-            runV2Cell(m, e, pristine);
+            File cell = tempDir("xfv2cell");
+            x.runCell(e, cell);
             assertTrue("two java cells for " + e.fixtureId + "/" + e.mode,
                     ran.add(e.fixtureId + "/" + e.mode));
+            TmpFiles.delete(cell);
+            dirs.remove(cell);
         }
         assertEquals("the java cells that ran are not the ones the fixture rows call for",
                 want, ran);
@@ -403,13 +289,14 @@ public class XFixtureConformanceTest {
         XFixtureManifest.Loaded loaded = XFixtureManifest.load(V2_ROOT);
         XFixtureManifest.V2 m = loaded.v2;
         File session = tempDir("xfixtures-v2-framing");
-        Map<String, File> pristine = gunzipAllV2(m, session);
+        gunzipAllV2(m, session);
 
         Map<String, String> want = goldenDecodeRows();
         Map<String, String> got = new TreeMap<>();
         for (XFixtureManifest.V2.FileRow f : m.files) {
             String where = f.fixtureId + "/" + f.relName;
-            byte[] bytes = Files.readAllBytes(pristine.get(where).toPath());
+            byte[] bytes = Files.readAllBytes(
+                    new File(new File(session, f.fixtureId), f.relName).toPath());
             Wal3Decode.Segment seg = Wal3Decode.decode(bytes, where);
             assertEquals(where + ": " + seg.trailing + " bytes follow the last whole section — a "
                     + "pinned golden segment with an unaccounted tail is not fully described by "
@@ -568,20 +455,60 @@ public class XFixtureConformanceTest {
     }
 
     /**
-     * {@code bytes} is a KNOWN v2 row type that this reader refuses because it cannot execute one
-     * yet — which is a different claim from "unknown row type", and the C3j review was right that
-     * filing it under that heading muddled the proof.
+     * The four C5 oracle rows are PARSED, and every field that is a grammar is checked.
      *
-     * <p>The row asserts specific bytes at an offset of a derived fixture, and no derived fixture
-     * exists before C4. The three ways to handle that are: execute it (impossible — there is
-     * nothing to execute it against, and an untested executor is worse than none), ignore it
-     * (forbidden: a silently skipped assertion is the defect this whole workstream is built to
-     * prevent), or refuse. Refusing means C4 cannot land a {@code bytes} row without also teaching
-     * this reader to run it, which is the outcome worth having.
+     * <p>Through C4 a {@code bytes} row was refused outright, because no derived fixture existed to
+     * execute one against and a silently skipped assertion is the defect this workstream is built
+     * to prevent. C5j gives it an input — {@code /xfixtures-v2-corpus/} — so the refusal is
+     * replaced by execution ({@link XFixtureCorpusTest}) and by these grammar cases, which are the
+     * half execution cannot reach: the corpus carries exactly one of each row type, so no shape it
+     * does not happen to have is graded by running it.
      */
-    @Test public void a_bytes_row_is_refused_until_c4_can_execute_it() {
-        refused("a v2 bytes row", "version\t2\nfixture\tf\twal3-namespace\tjava\tc\n"
-                + "bytes\tf\tjava\trw\tx.wal.0000000000000001\t0\tdeadbeef\n");
+    @Test public void the_c5_oracle_rows_are_parsed_and_their_grammars_checked() {
+        XFixtureManifest.V2 m = XFixtureManifest.parse(String.join("\n",
+                "version\t2",
+                "fixture\tf\twal3-namespace\tjava\tc",
+                "applies\tf\tjava\trw",
+                "expect\tf\tjava\trw\taccept\twal3\tx",
+                "action\tf\tjava\trw\tcommit_one_record\top=put,payload_id=161,serializer=raw",
+                "bytes\tf\tjava\trw\tx.wal.0000000000000004\t187\t8000000000000000",
+                "reopen\tf\tjava\trw\tS2") + "\n").v2;
+        assertEquals("rw", m.applies.get(0).mode);
+        assertEquals("commit_one_record", m.actions.get(0).verb);
+        assertEquals(187, m.bytes.get(0).offset);
+        assertEquals("8000000000000000", m.bytes.get(0).hex);
+        assertEquals("S2", m.reopens.get(0).family);
+
+        String head = "version\t2\nfixture\tf\twal3-namespace\tjava\tc\n";
+        refused("a duplicate applies row", head + "applies\tf\tjava\trw\napplies\tf\tjava\trw\n");
+        refused("a duplicate action row for one verb", head
+                + "action\tf\tjava\trw\tv\ta=1\naction\tf\tjava\trw\tv\ta=2\n");
+        refused("a duplicate reopen row",
+                head + "reopen\tf\tjava\trw\tS2\nreopen\tf\tjava\trw\tS9\n");
+        refused("a duplicate bytes row at one offset", head
+                + "bytes\tf\tjava\trw\tx\t1\taa\nbytes\tf\tjava\trw\tx\t1\tbb\n");
+        // `catalogue.render_action_args` sorts the keys and pins the value character class. A
+        // reader that accepted any order would accept a manifest python refuses, and the two roots
+        // would then disagree about what the same cell says.
+        refused("action arguments out of sorted order",
+                head + "action\tf\tjava\trw\tv\tb=1,a=2\n");
+        refused("a repeated action argument key", head + "action\tf\tjava\trw\tv\ta=1,a=2\n");
+        refused("an action argument that is not k=v", head + "action\tf\tjava\trw\tv\tabc\n");
+        refused("an action argument key outside [a-z][a-z0-9_]*",
+                head + "action\tf\tjava\trw\tv\tA=1\n");
+        refused("an action argument value with a comma in it",
+                head + "action\tf\tjava\trw\tv\ta=1;b,c=2\n");
+        refused("an empty action argument value", head + "action\tf\tjava\trw\tv\ta=\n");
+        refused("an odd-length bytes value", head + "bytes\tf\tjava\trw\tx\t0\tabc\n");
+        refused("an uppercase bytes value", head + "bytes\tf\tjava\trw\tx\t0\tAB\n");
+        refused("an empty bytes value", head + "bytes\tf\tjava\trw\tx\t0\t\n");
+        refused("a bytes offset that is not a canonical integer",
+                head + "bytes\tf\tjava\trw\tx\t007\tab\n");
+        refused("a bytes relName that escapes the cell directory",
+                head + "bytes\tf\tjava\trw\t../x\t0\tab\n");
+        refused("an out-of-vocabulary engine on an applies row",
+                head + "applies\tf\tocaml\trw\n");
+        refused("a wrong-arity reopen row", head + "reopen\tf\tjava\trw\n");
     }
 
     /**

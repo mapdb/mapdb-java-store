@@ -108,10 +108,35 @@ final class XFixtureManifest {
             long length = -1;
         }
 
+        /** {@code applies <fid> <engine> <mode>} — a cell this corpus actually contains. */
+        static final class Applies {
+            String fixtureId, engine, mode;
+        }
+
+        /** {@code action <fid> <engine> <mode> <verb> <args>} — a post-open executor step. */
+        static final class Action {
+            String fixtureId, engine, mode, verb, argSpec;
+        }
+
+        /** {@code bytes <fid> <engine> <mode> <relName> <offset> <hex>} — against the POST bytes. */
+        static final class Bytes {
+            String fixtureId, engine, mode, relName, hex;
+            long offset;
+        }
+
+        /** {@code reopen <fid> <engine> <mode> <family>} — the SECOND open must fail with it. */
+        static final class Reopen {
+            String fixtureId, engine, mode, family;
+        }
+
         final Map<String, String> fixtureKinds = new LinkedHashMap<>();
         final List<FileRow> files = new ArrayList<>();
         final List<Expect> expects = new ArrayList<>();
         final List<Post> posts = new ArrayList<>();
+        final List<Applies> applies = new ArrayList<>();
+        final List<Action> actions = new ArrayList<>();
+        final List<Bytes> bytes = new ArrayList<>();
+        final List<Reopen> reopens = new ArrayList<>();
         final Map<String, List<FixtureWriter.RecidExpect>> recids = new HashMap<>();
 
         /** A v2 fixture is a whole namespace: one or more file rows, in manifest order. */
@@ -127,6 +152,30 @@ final class XFixtureManifest {
             for (Post p : posts)
                 if (p.fixtureId.equals(fixtureId) && p.engine.equals(engine) && p.mode.equals(mode))
                     out.add(p);
+            return out;
+        }
+
+        List<Action> actionsOf(String fixtureId, String engine, String mode) {
+            List<Action> out = new ArrayList<>();
+            for (Action a : actions)
+                if (a.fixtureId.equals(fixtureId) && a.engine.equals(engine) && a.mode.equals(mode))
+                    out.add(a);
+            return out;
+        }
+
+        List<Bytes> bytesOf(String fixtureId, String engine, String mode) {
+            List<Bytes> out = new ArrayList<>();
+            for (Bytes b : bytes)
+                if (b.fixtureId.equals(fixtureId) && b.engine.equals(engine) && b.mode.equals(mode))
+                    out.add(b);
+            return out;
+        }
+
+        List<Reopen> reopensOf(String fixtureId, String engine, String mode) {
+            List<Reopen> out = new ArrayList<>();
+            for (Reopen r : reopens)
+                if (r.fixtureId.equals(fixtureId) && r.engine.equals(engine) && r.mode.equals(mode))
+                    out.add(r);
             return out;
         }
     }
@@ -292,6 +341,19 @@ final class XFixtureManifest {
                     m.files.add(f);
                     break;
                 }
+                case "applies": {
+                    arity(t, 4, line);
+                    V2.Applies ap = new V2.Applies();
+                    ap.fixtureId = t[1];
+                    ap.engine = vocab(t[2], ENGINES, "engine", line);
+                    ap.mode = vocab(t[3], MODES, "mode", line);
+                    for (V2.Applies prior : m.applies)
+                        check(!cellEq(prior.fixtureId, prior.engine, prior.mode, ap.fixtureId,
+                                        ap.engine, ap.mode),
+                                "duplicate applies row: " + line);
+                    m.applies.add(ap);
+                    break;
+                }
                 case "expect": {
                     arity(t, 7, line);
                     V2.Expect e = new V2.Expect();
@@ -335,12 +397,63 @@ final class XFixtureManifest {
                     m.posts.add(p);
                     break;
                 }
-                case "bytes":
+                case "action": {
+                    arity(t, 6, line);
+                    V2.Action a = new V2.Action();
+                    a.fixtureId = t[1];
+                    a.engine = vocab(t[2], ENGINES, "engine", line);
+                    a.mode = vocab(t[3], MODES, "mode", line);
+                    a.verb = t[4];
+                    a.argSpec = actionArgs(t[5], line);
+                    // One action row per cell per verb. NOT one per cell: `catalogue.actions` holds
+                    // a LIST, so a second verb on the same cell is a legal future shape, and
+                    // refusing it here would refuse the corpus rather than a defect.
+                    for (V2.Action prior : m.actions)
+                        check(!(cellEq(prior.fixtureId, prior.engine, prior.mode, a.fixtureId,
+                                        a.engine, a.mode) && prior.verb.equals(a.verb)),
+                                "duplicate action row for " + a.fixtureId + "/" + a.engine + "/"
+                                        + a.mode + "/" + a.verb + ": " + line);
+                    m.actions.add(a);
+                    break;
+                }
+                case "reopen": {
+                    arity(t, 5, line);
+                    V2.Reopen r = new V2.Reopen();
+                    r.fixtureId = t[1];
+                    r.engine = vocab(t[2], ENGINES, "engine", line);
+                    r.mode = vocab(t[3], MODES, "mode", line);
+                    // The family is NOT vocabulary-checked here. `catalogue.FAMILIES` has 18
+                    // members and this engine implements a predicate for a handful of them; a
+                    // vocabulary check would accept a family the executor then cannot run, and the
+                    // executor's own refusal is both stricter and the one that matters. Checking it
+                    // twice, in two places, with two lists, is how the second list goes stale.
+                    r.family = t[4];
+                    for (V2.Reopen prior : m.reopens)
+                        check(!cellEq(prior.fixtureId, prior.engine, prior.mode, r.fixtureId,
+                                        r.engine, r.mode),
+                                "duplicate reopen row for " + r.fixtureId + "/" + r.engine + "/"
+                                        + r.mode + ": " + line);
+                    m.reopens.add(r);
+                    break;
+                }
+                case "bytes": {
                     arity(t, 7, line);
-                    // A byte-level assertion on a derived cell; no derived fixture exists before C4,
-                    // so a row here would describe a file this reader was never given. Refuse.
-                    throw new AssertionError("v2 `bytes` row, which this reader does not execute yet "
-                            + "(C4 introduces the derived fixtures it describes): " + line);
+                    V2.Bytes b = new V2.Bytes();
+                    b.fixtureId = t[1];
+                    b.engine = vocab(t[2], ENGINES, "engine", line);
+                    b.mode = vocab(t[3], MODES, "mode", line);
+                    b.relName = relName(t[4], line);
+                    b.offset = nat(t[5], line);
+                    b.hex = hexBlob(t[6], line);
+                    for (V2.Bytes prior : m.bytes)
+                        check(!(cellEq(prior.fixtureId, prior.engine, prior.mode, b.fixtureId,
+                                        b.engine, b.mode) && prior.relName.equals(b.relName)
+                                        && prior.offset == b.offset),
+                                "duplicate bytes row for " + b.fixtureId + "/" + b.engine + "/"
+                                        + b.mode + "/" + b.relName + "@" + b.offset + ": " + line);
+                    m.bytes.add(b);
+                    break;
+                }
                 case "recid":
                     arity(t, 7, line);
                     addRecid(m.recids, t[1], recid(t[2], nat(t[3], line), state(t[4], line),
@@ -459,6 +572,57 @@ final class XFixtureManifest {
                         && !s.equals(".") && !s.equals("..") && !s.startsWith("-")
                         && !new java.io.File(s).isAbsolute(),
                 "unsafe relName " + s + " in: " + line);
+        return s;
+    }
+
+    /** The four oracle row types are all keyed by a CELL; written once so three copies cannot drift. */
+    private static boolean cellEq(String f1, String e1, String m1, String f2, String e2, String m2) {
+        return f1.equals(f2) && e1.equals(e2) && m1.equals(m2);
+    }
+
+    /**
+     * An {@code action} row's argument spec, matching {@code catalogue.render_action_args}.
+     *
+     * <p>{@code k=v} pairs joined by {@code ,}, <b>keys in sorted order</b>, each key
+     * {@code [a-z][a-z0-9_]*}, each value nonempty and drawn from {@code catalogue.ARG_VALUE_CHARS}
+     * — which excludes TAB, {@code ,} and {@code =} precisely so the row can be re-split.
+     *
+     * <p>The sort order is checked rather than ignored because the spec reaches
+     * {@link org.mapdb.store.Wal3Actions} as a STRING and is compared, in todo's gate, against a
+     * single rendering authority. A reader that accepted any order would accept a manifest that
+     * python refuses, and the two roots would then disagree about what the same cell says.
+     */
+    private static String actionArgs(String s, String line) {
+        String prev = null;
+        for (String pair : s.split(",", -1)) {
+            int eq = pair.indexOf('=');
+            check(eq > 0 && pair.indexOf('=', eq + 1) < 0,
+                    "action argument " + pair + " is not one k=v pair in: " + line);
+            String k = pair.substring(0, eq), v = pair.substring(eq + 1);
+            check(k.charAt(0) >= 'a' && k.charAt(0) <= 'z'
+                            && k.chars().allMatch(c -> (c >= 'a' && c <= 'z')
+                                    || (c >= '0' && c <= '9') || c == '_'),
+                    "action argument key " + k + " is not [a-z][a-z0-9_]* in: " + line);
+            check(prev == null || prev.compareTo(k) < 0,
+                    "action argument keys must be sorted and distinct: " + k + " follows " + prev
+                            + " in: " + line);
+            prev = k;
+            check(!v.isEmpty() && v.chars().allMatch(c -> ARG_VALUE_CHARS.indexOf(c) >= 0),
+                    "action argument " + k + "=" + v + ": value must be nonempty and drawn from "
+                            + "the pinned character class in: " + line);
+        }
+        return s;
+    }
+
+    /** {@code catalogue.ARG_VALUE_CHARS}, transcribed. */
+    private static final String ARG_VALUE_CHARS =
+            "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._@:/+-";
+
+    /** An even-length run of lowercase hex, nonempty: a {@code bytes} row's asserted value. */
+    private static String hexBlob(String s, String line) {
+        check(!s.isEmpty() && s.length() % 2 == 0
+                        && s.chars().allMatch(c -> (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')),
+                "not a nonempty even-length lowercase hex blob: " + s + " in: " + line);
         return s;
     }
 
