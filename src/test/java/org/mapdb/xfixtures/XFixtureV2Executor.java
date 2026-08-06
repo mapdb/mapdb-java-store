@@ -30,9 +30,10 @@ import static org.junit.Assert.fail;
  * rows they carry, not in what a cell means. Two executors would be two implementations of the
  * post-state rule, the opener dispatch and the reader contract, and this workstream has already
  * shipped the consequence twice — a fix applied to one of two copies is a fix that did not happen
- * (C2j's B-finding). The differences that are real are passed in as {@link Rules}, stated at the
- * CALL SITE rather than sniffed from the manifest: a reader that decided how strict to be by
- * looking at the file it is grading has decided nothing (lesson j).
+ * (C2j's B-finding). And there is now NO per-root knob at all: the first draft gave the corpus a
+ * relaxed accept rule that the sample did not get, and both reviewers showed the relaxation was a
+ * deletion with a rationalisation attached. {@link #requireSomeOracle} is the disjunction plan
+ * §5.3 item 5 asked for, it admits every cell either root has, and it is the same rule for both.
  *
  * <h2>The cell, in order</h2>
  * <ol>
@@ -48,41 +49,19 @@ import static org.junit.Assert.fail;
  *   <li>if a {@code reopen} row is addressed here, open again and require the named family.</li>
  * </ol>
  *
- * <h2>Consumption accounting</h2>
+ * <h2>Consumption accounting, in two halves</h2>
  * Every {@code action}, {@code bytes} and {@code reopen} row addressed to the cell being run must
- * be consumed by a handler. This is not bookkeeping: of java's three oracle rows only the
+ * be consumed by a handler ({@link Consumption}). Of java's three oracle rows only the
  * {@code action} has a failure of its own — the whole-file {@code post} hash subsumes a
- * byte-at-offset assertion, and <em>nothing at all</em> observes a dropped {@code reopen}. Delete
- * the reopen call below and this is the only thing that turns the suite red.
+ * byte-at-offset assertion, and <em>nothing at all</em> observes a dropped {@code reopen} — so
+ * deleting the reopen call turns the suite red here and nowhere else.
+ *
+ * <p>That is only half the rule, and shipping it as the whole rule is what both C5j reviewers
+ * broke independently: an accountant built per cell cannot see a row addressed to a cell that does
+ * not exist. {@link #requireEveryOracleRowAddressesARunCell} is the other half, and contract §2.3
+ * needs both to be true of an engine.
  */
 final class XFixtureV2Executor {
-
-    /**
-     * The two rules that genuinely differ between the roots, and what buys the relaxation.
-     *
-     * <p>{@code requireRecidOnAccept} is the C3j guard "an accept cell that asserts nothing is not
-     * a check". It is right for the sample and wrong for the corpus, where {@code div-wal3-lsn-…}
-     * carries an action and a post state on its {@code rw} cell and — on its {@code ro} cell — no
-     * logical-state claim at all, because the CLAIM IS THE VERDICT: java accepts an image both
-     * ports refuse. So the corpus needs a different completeness authority, and it has a stronger
-     * one: the distribution seal covers every byte of {@code MANIFEST.tsv}, so a row that goes
-     * missing is a red gate whatever kind of row it was. The relaxation is therefore <b>bought</b>
-     * — {@code sealed} must be true for it, and that is asserted in the constructor rather than
-     * left as a convention two call sites could drift on.
-     */
-    static final class Rules {
-        final boolean sealed;
-
-        private Rules(boolean sealed) { this.sealed = sealed; }
-
-        /** {@code v2-core}: no oracle rows, and every accept cell owes a recid oracle. */
-        static Rules unsealedSample() { return new Rules(false); }
-
-        /** {@code v2-oracle}: the root's manifest is pinned by a distribution seal. */
-        static Rules sealedRoot() { return new Rules(true); }
-
-        boolean requireRecidOnAccept() { return !sealed; }
-    }
 
     /**
      * How to choose the opener. {@link #BY_MANIFEST} is the only value production uses;
@@ -103,16 +82,58 @@ final class XFixtureV2Executor {
      */
     enum Dispatch { BY_MANIFEST, ALWAYS_WAL3 }
 
+    /** The one engine this executor speaks for. Named once so no sibling can drift from it. */
+    static final String ENGINE = "java";
+
     private final XFixtureManifest.V2 m;
-    private final Rules rules;
     private final File session;
 
-    XFixtureV2Executor(XFixtureManifest.V2 m, Rules rules, File session) {
+    /**
+     * The {@code (fixtureId, mode)} of every {@code ro} accept cell whose read-only handle was
+     * actually probed with a write.
+     *
+     * <p>This exists so the probe is not a LEAF. Both reviewers deleted
+     * {@code if (ro) assertWriteRefused(...)} and watched the whole gate stay green — nothing
+     * observed the call, and the standalone discriminating test opens {@code openReadOnly} itself,
+     * so it could not see the executor skipping it. A set the caller compares against the cells it
+     * ran turns the deletion into an empty set and a red gate. It is bookkeeping, and it is the
+     * cheapest honest answer to "a rule can be correct, directly tested, and never called".
+     */
+    final TreeSet<String> readOnlyHandlesProbed = new TreeSet<>();
+
+    XFixtureV2Executor(XFixtureManifest.V2 m, File session) {
         this.m = m;
-        this.rules = rules;
         this.session = session;
-        assertTrue("a root whose manifest is not sealed cannot buy the relaxed accept rule",
-                rules.sealed || rules.requireRecidOnAccept());
+    }
+
+    /**
+     * Every {@code action}/{@code bytes}/{@code reopen} row addressed to java must name a cell this
+     * engine actually runs.
+     *
+     * <p>Per-cell consumption cannot see this, and both reviewers proved it independently: the
+     * accountant is built from the rows addressed to the cell BEING RUN, so a row addressed to a
+     * {@code (fixture, mode)} with no {@code expect} row is owed by nobody, consumed by nobody and
+     * graded by nobody. Codex moved Q8's {@code bytes} row to {@code reject-wal3-d1-barebase}
+     * (a real fixture with no java cell, by {@code EXPECT_EXCEPTIONS}) and fable moved the
+     * {@code reopen} row to the direct cell's absent {@code ro} mode; both suites stayed green with
+     * the oracle silently dropped. Contract §2.3 says an addressed row no handler consumed is a
+     * failure, and this is the half of that sentence per-cell accounting cannot reach.
+     *
+     * @param ran the {@code fixtureId + "/" + mode} of every java cell that was executed
+     */
+    void requireEveryOracleRowAddressesARunCell(java.util.Set<String> ran) {
+        TreeSet<String> orphans = new TreeSet<>();
+        for (XFixtureManifest.V2.Action a : m.actions)
+            if (ENGINE.equals(a.engine) && !ran.contains(a.fixtureId + "/" + a.mode))
+                orphans.add("action " + a.fixtureId + "/" + a.mode + " " + a.verb);
+        for (XFixtureManifest.V2.Bytes b : m.bytes)
+            if (ENGINE.equals(b.engine) && !ran.contains(b.fixtureId + "/" + b.mode))
+                orphans.add("bytes " + b.fixtureId + "/" + b.mode + " " + b.relName);
+        for (XFixtureManifest.V2.Reopen r : m.reopens)
+            if (ENGINE.equals(r.engine) && !ran.contains(r.fixtureId + "/" + r.mode))
+                orphans.add("reopen " + r.fixtureId + "/" + r.mode + " " + r.family);
+        assertTrue("oracle rows addressed to java whose cell this engine never ran, so no "
+                + "accountant could ever owe them: " + orphans, orphans.isEmpty());
     }
 
     // ------------------------------------------------------------------ one cell
@@ -122,17 +143,17 @@ final class XFixtureV2Executor {
     }
 
     void runCell(XFixtureManifest.V2.Expect e, File cell, Dispatch dispatch) throws IOException {
-        String ctx = "v2 cell[" + e.fixtureId + " java " + e.mode + " " + e.verdict + " "
+        String ctx = "v2 cell[" + e.fixtureId + " " + ENGINE + " " + e.mode + " " + e.verdict + " "
                 + e.opener + "]";
 
         // Every oracle row addressed to this cell, and nothing else. Rows are REMOVED as they are
         // consumed; what is left at the end is a claim the executor was handed and dropped.
         Consumption owed = new Consumption(ctx);
-        for (XFixtureManifest.V2.Action a : m.actionsOf(e.fixtureId, "java", e.mode))
+        for (XFixtureManifest.V2.Action a : m.actionsOf(e.fixtureId, ENGINE, e.mode))
             owed.owe("action " + a.verb, a);
-        for (XFixtureManifest.V2.Bytes b : m.bytesOf(e.fixtureId, "java", e.mode))
+        for (XFixtureManifest.V2.Bytes b : m.bytesOf(e.fixtureId, ENGINE, e.mode))
             owed.owe("bytes " + b.relName + "@" + b.offset, b);
-        for (XFixtureManifest.V2.Reopen r : m.reopensOf(e.fixtureId, "java", e.mode))
+        for (XFixtureManifest.V2.Reopen r : m.reopensOf(e.fixtureId, ENGINE, e.mode))
             owed.owe("reopen " + r.family, r);
 
         Map<String, byte[]> inputs = new LinkedHashMap<>();
@@ -168,7 +189,7 @@ final class XFixtureV2Executor {
         boolean ro = "ro".equals(e.mode);
         StoreWAL s = ro ? StoreWAL.openReadOnly(target) : new StoreWAL(target);
         try {
-            for (XFixtureManifest.V2.Action a : m.actionsOf(e.fixtureId, "java", e.mode)) {
+            for (XFixtureManifest.V2.Action a : m.actionsOf(e.fixtureId, ENGINE, e.mode)) {
                 // Deliberately NOT wrapped: a store that opened and then failed its action is a
                 // different fact from one that refused to open, and collapsing the two lets a
                 // broken action be read as the cell's verdict.
@@ -177,12 +198,50 @@ final class XFixtureV2Executor {
             }
             List<FixtureWriter.RecidExpect> expects = m.recids.get(e.fixtureId);
             boolean has = expects != null && !expects.isEmpty();
-            assertTrue(ctx + ": accept fixture has no recid rows", has || !rules.requireRecidOnAccept());
+            requireSomeOracle(ctx, e, has);
             if (has) FixtureWriter.assertReaderContract(s, expects, ctx);
-            if (ro) assertWriteRefused(ctx, s);
+            if (ro) {
+                assertWriteRefused(ctx, s);
+                readOnlyHandlesProbed.add(e.fixtureId + "/" + e.mode);
+            }
         } finally {
             s.close();
         }
+    }
+
+    /**
+     * An accept cell must assert SOMETHING about the store it just opened — the C3j guard, as the
+     * disjunction plan §5.3 item 5 asked for.
+     *
+     * <p>The first draft of this slice deleted the guard for the corpus and called the distribution
+     * seal its replacement. Both reviewers refused that, and proving them right took one doctored
+     * manifest: strip {@code wal3-java-cleaned}'s six recid rows and its accept cell passes with
+     * nothing but the universal {@code x.lock} post row behind it. <b>The seal proves copy fidelity
+     * and the guard proves assertion adequacy</b>; artifact identity cannot buy a semantic
+     * property, and after that deletion nothing on either side of the fence enforced it — there is
+     * no such rule in {@code manifest_v2.py} either.
+     *
+     * <p>The disjunction admits every cell the corpus actually has, which is why the deletion was
+     * never forced:
+     * <ul>
+     *   <li>{@code recid} rows — the logical-state claim ({@code wal3-java-cleaned} rw and ro, and
+     *       all three sample fixtures);</li>
+     *   <li>an {@code action} row — the cell commits and a post oracle grades the result
+     *       ({@code div-wal3-lsn-exhausted} java rw);</li>
+     *   <li>a {@code reopen} row — the store's permanent unopenability is the claim;</li>
+     *   <li>{@code mode == ro} — the read-only write refusal below is an executable claim, and on
+     *       {@code div-wal3-lsn-exhausted} java ro it is the whole point: java accepts an image
+     *       both ports refuse, and refuses the write. The first draft called that cell one that
+     *       "carries neither", which skipped the probe it does carry.</li>
+     * </ul>
+     */
+    private void requireSomeOracle(String ctx, XFixtureManifest.V2.Expect e, boolean hasRecids) {
+        boolean any = hasRecids
+                || !m.actionsOf(e.fixtureId, ENGINE, e.mode).isEmpty()
+                || !m.reopensOf(e.fixtureId, ENGINE, e.mode).isEmpty()
+                || "ro".equals(e.mode);
+        assertTrue(ctx + ": an accept cell with no recid rows, no action, no reopen and a writable "
+                + "handle asserts nothing about the store it opened, which is not a check", any);
     }
 
     /**
@@ -250,7 +309,7 @@ final class XFixtureV2Executor {
      */
     private void assertBytesRows(String ctx, XFixtureManifest.V2.Expect e,
                                  Map<String, byte[]> after, Consumption owed) {
-        for (XFixtureManifest.V2.Bytes b : m.bytesOf(e.fixtureId, "java", e.mode)) {
+        for (XFixtureManifest.V2.Bytes b : m.bytesOf(e.fixtureId, ENGINE, e.mode)) {
             String where = ctx + " bytes[" + b.relName + "@" + b.offset + "]";
             byte[] now = after.get(b.relName);
             assertTrue(where + ": names a file the cell directory does not hold", now != null);
@@ -271,7 +330,7 @@ final class XFixtureV2Executor {
 
     private void assertReopen(String ctx, XFixtureManifest.V2.Expect e, File target,
                               Consumption owed) {
-        for (XFixtureManifest.V2.Reopen r : m.reopensOf(e.fixtureId, "java", e.mode)) {
+        for (XFixtureManifest.V2.Reopen r : m.reopensOf(e.fixtureId, ENGINE, e.mode)) {
             String where = ctx + " reopen[" + r.family + "]";
             // A reopen is a WRITABLE open whatever the cell's own mode was: the claim is that the
             // store is permanently unopenable, and a read-only probe would be a weaker one.
@@ -282,9 +341,18 @@ final class XFixtureV2Executor {
         }
     }
 
-    /** S2 is {@code lsn <= seg.lastLsn} on a section HEADER ({@code StoreWAL.java:679-682}). */
-    static final Pattern S2 =
-            Pattern.compile("section LSN -?\\d+ at offset \\d+ does not follow -?\\d+");
+    /**
+     * S2 is {@code lsn <= seg.lastLsn} on a section HEADER ({@code StoreWAL.java:679-682}), wrapped
+     * by {@code hold}'s {@code "WAL segment <name>: "} prefix.
+     *
+     * <p>Matched WHOLE, with {@link java.util.regex.Matcher#matches}. The first draft used
+     * {@code find()} on an unanchored fragment and its comment claimed it was anchored; codex
+     * demonstrated the gap — a message with the S2 wording embedded in unrelated text passed. The
+     * refusal this grades is one line of the reference and its whole form is knowable, so matching
+     * the whole form is what the check should say.
+     */
+    static final Pattern S2 = Pattern.compile(
+            "WAL segment [^:]+: section LSN -?\\d+ at offset \\d+ does not follow -?\\d+");
 
     /**
      * Asserts a refusal belongs to the named contract family.
@@ -305,7 +373,7 @@ final class XFixtureV2Executor {
             assertTrue(where + ": S2 is a corruption verdict, got " + t.getClass().getName()
                     + ": " + t.getMessage(), t instanceof DBException.DataCorruption);
             assertTrue(where + ": not the S2 rule's refusal: " + t.getMessage(),
-                    t.getMessage() != null && S2.matcher(t.getMessage()).find());
+                    t.getMessage() != null && S2.matcher(t.getMessage()).matches());
             return;
         }
         fail(where + ": error family " + family + " has no predicate in this engine. Refusing "
@@ -343,10 +411,17 @@ final class XFixtureV2Executor {
      * opens the volume, so the refused file leaves a sidecar too. The catalogue now says so
      * ({@code DIRECT_OPENER_LOCKS}) and every java cell has a post row again, so the original
      * guard stands unweakened. Whether the ports need the relaxation is what C5r and C5z measure.
+     *
+     * <p><b>Recorded rather than implied</b> (codex, C5j review): across both roots the java
+     * {@code post} rows exercise {@code created} and {@code modified} only. {@code unchanged},
+     * {@code deleted} and {@code truncated} are parsed, branch here, and are executed by nothing —
+     * parsed vocabulary is not execution coverage. It blocks no C5j cell, and the inputs that would
+     * close it are C5t's torn-tail dispositions, which is where the six {@code truncated}/
+     * {@code deleted} shapes actually live.
      */
     private void assertPostState(String ctx, XFixtureManifest.V2.Expect e,
                                  Map<String, byte[]> after, Map<String, byte[]> inputs) {
-        List<XFixtureManifest.V2.Post> posts = m.postsOf(e.fixtureId, "java", e.mode);
+        List<XFixtureManifest.V2.Post> posts = m.postsOf(e.fixtureId, ENGINE, e.mode);
         assertTrue(ctx + ": no post rows — a cell that asserts nothing about the directory it just "
                 + "opened is not a check", !posts.isEmpty());
         TreeSet<String> named = new TreeSet<>();

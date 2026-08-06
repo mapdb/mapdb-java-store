@@ -221,11 +221,10 @@ public class XFixtureConformanceTest {
      * The static sample's cells, through the shared v2 executor.
      *
      * <p>The sample is the {@code v2-core} profile — no {@code applies}, {@code action},
-     * {@code bytes} or {@code reopen} rows — so it runs under
-     * {@link XFixtureV2Executor.Rules#unsealedSample}, which keeps the strict "an accept cell owes
-     * a recid oracle" rule. The corpus root buys the relaxation with a distribution seal; this root
-     * has none and does not get it. Which rules apply is stated HERE, at the call site, rather than
-     * inferred from the manifest being graded.
+     * {@code bytes} or {@code reopen} rows — and it runs under exactly the same rules as the
+     * corpus. An earlier draft gave the corpus a relaxed accept rule the sample did not get; both
+     * C5j reviewers showed that was a deletion rather than the disjunction the plan asked for, so
+     * there is no per-root knob left to state.
      */
     @Test public void sample_v2_cells_conform() throws Exception {
         XFixtureManifest.Loaded loaded = XFixtureManifest.load(V2_ROOT);
@@ -234,8 +233,7 @@ public class XFixtureConformanceTest {
         XFixtureManifest.V2 m = loaded.v2;
         File session = tempDir("xfixtures-v2-session");
         gunzipAllV2(m, session);
-        XFixtureV2Executor x = new XFixtureV2Executor(
-                m, XFixtureV2Executor.Rules.unsealedSample(), session);
+        XFixtureV2Executor x = new XFixtureV2Executor(m, session);
 
         // The sample is v2-core, in BOTH directions. A root that grew an oracle row would be
         // running assertions this test's rules never bought, and — since C5 moved the profile

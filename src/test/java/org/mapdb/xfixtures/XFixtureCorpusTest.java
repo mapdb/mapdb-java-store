@@ -35,24 +35,29 @@ import static org.junit.Assert.fail;
  * todo's gate re-derives from {@code FROZEN.tsv} on every run. Neither side can move without the
  * other going red, and the comparison is in CI rather than in a review note.
  *
- * <p>That seal is also the corpus's <b>completeness</b> authority, which is what buys
- * {@link XFixtureV2Executor.Rules#sealedRoot} its relaxed accept rule: a {@code recid},
- * {@code action} or {@code reopen} row that goes missing changes {@code MANIFEST.tsv} and is caught
- * whatever kind of row it was. The sample root has no such authority and keeps the strict rule.
+ * <p><b>What the seal does NOT buy.</b> It proves copy fidelity — that these are todo's bytes —
+ * and nothing about whether the manifest expresses enough semantics. The first draft of this slice
+ * used it to justify dropping the "an accept cell must assert something" guard for this root, and
+ * both reviewers refused: one stripped {@code wal3-java-cleaned}'s recid rows and watched an
+ * assert-nothing accept cell pass. The guard is back, as the disjunction plan §5.3 item 5 asked
+ * for, and it is now the SAME rule for both roots ({@link XFixtureV2Executor#requireSomeOracle}).
  *
  * <h2>The deletion campaign</h2>
- * Nine checks were removed one at a time and the suite required to go red for the reason each
- * names — the reopen execution, the bytes execution, the action execution, the action with the
- * bytes assertion neutralised beside it (so the {@code modified:279} post row is what fires), the
- * consumption accountant's call site, the {@code ro} mode SELECTION, the opener dispatch, the
- * two-sided file-set rule, and the S2 message predicate. All nine killed.
+ * Fourteen checks were removed one at a time and the suite required to go red for the reason each
+ * names: the reopen execution, the bytes execution, the action execution, the action with the bytes
+ * assertion neutralised beside it (so the {@code modified:279} post row is what fires), the
+ * per-cell accountant's call site, the suite-wide addressing check, the {@code ro} mode SELECTION,
+ * the {@code ro} write probe's call, the opener dispatch, the two-sided file-set rule, the
+ * {@code bytes} value equality, the {@code assertFamily} call, the accept-cell oracle guard, and
+ * the two {@code applies} set equalities.
  *
- * <p>Three of them had no natural input and are green with the check deleted unless something
- * supplies one: the accountant (every row is consumed today), the file-set rule (every file is
- * named today) and the reader contract (nothing observes a leaf assertion). The first two are
- * given DOCTORED inputs by tests in this file; the third cannot be — deleting the last assertion
- * in a chain is undetectable by construction — so what is proved instead is that it FIRES, which
- * is a different claim and is labelled as one.
+ * <p><b>Eight of them are green with the check deleted unless something supplies an input</b>, and
+ * that is the shape both C5j reviews were about. Seven are closed with DOCTORED manifests in this
+ * file — the round-one draft had three of them and shipped the other four unguarded. The eighth is
+ * the reader contract, which cannot be closed that way: nothing observes a leaf assertion, so what
+ * is proved instead is that it FIRES ({@link #the_reader_contract_is_not_vacuous}), which is a
+ * different claim and is labelled as one. The {@code ro} write probe was the same shape and is no
+ * longer, because {@link XFixtureV2Executor#readOnlyHandlesProbed} makes the call observable.
  */
 public class XFixtureCorpusTest {
 
@@ -105,11 +110,23 @@ public class XFixtureCorpusTest {
      * without it a manifest could have this suite run a cell it holds no verdict for.
      */
     @Test public void corpus_cells_conform() throws Exception {
-        XFixtureManifest.V2 m = manifest();
+        runEveryJavaCell(manifest());
+    }
+
+    /**
+     * The whole suite-level flow: run every java cell, then apply every rule that is about the SET
+     * of cells rather than about one of them.
+     *
+     * <p>Extracted so the doctored cases below go through <b>this</b> code rather than calling the
+     * rules directly. That distinction is the entire finding both C5j reviewers made, and the first
+     * repair round reproduced it: a test that calls {@code requireEveryOracleRowAddressesARunCell}
+     * itself proves the METHOD and leaves its CALL unobserved, so deleting the call from the suite
+     * stayed green. Every doctored manifest now enters here.
+     */
+    private void runEveryJavaCell(XFixtureManifest.V2 m) throws IOException {
         File session = tempDir("xfcorpus-session");
         XFixtureV2Executor.gunzipAll(m, ROOT, session);
-        XFixtureV2Executor x = new XFixtureV2Executor(m, XFixtureV2Executor.Rules.sealedRoot(),
-                session);
+        XFixtureV2Executor x = new XFixtureV2Executor(m, session);
 
         TreeSet<String> want = new TreeSet<>();
         for (XFixtureManifest.V2.Applies a : m.applies)
@@ -133,6 +150,23 @@ public class XFixtureCorpusTest {
             dirs.remove(cell);
         }
         assertEquals("the java cells that ran are not the ones `applies` calls for", want, ran);
+
+        // The other half of contract §2.3's consumption rule. Per-cell accounting owes only the
+        // rows addressed to the cell being run, so a row addressed to a cell that does not exist
+        // is owed by nobody — both reviewers proved that independently and both suites stayed
+        // green with the oracle dropped.
+        x.requireEveryOracleRowAddressesARunCell(ran);
+
+        // …and the ro write probe really ran on every ro cell. Deleting the call inside the
+        // executor leaves this set empty, which is the red that call did not have.
+        TreeSet<String> roCells = new TreeSet<>();
+        for (XFixtureManifest.V2.Expect e : m.expects)
+            if ("java".equals(e.engine) && "ro".equals(e.mode) && "accept".equals(e.verdict))
+                roCells.add(e.fixtureId + "/" + e.mode);
+        assertTrue("the corpus has no java ro accept cell, so the read-only probe has no input",
+                !roCells.isEmpty());
+        assertEquals("the ro cells whose read-only handle was probed with a write",
+                roCells, x.readOnlyHandlesProbed);
 
         // The oracle rows exist and are addressed to cells that ran. Without this the whole C5j
         // execution path could be absent from the corpus and every assertion above would still
@@ -169,8 +203,7 @@ public class XFixtureCorpusTest {
         XFixtureManifest.V2 m = manifest();
         File session = tempDir("xfcorpus-mutant");
         XFixtureV2Executor.gunzipAll(m, ROOT, session);
-        XFixtureV2Executor x = new XFixtureV2Executor(m, XFixtureV2Executor.Rules.sealedRoot(),
-                session);
+        XFixtureV2Executor x = new XFixtureV2Executor(m, session);
 
         XFixtureManifest.V2.Expect direct = null;
         for (XFixtureManifest.V2.Expect e : m.expects)
@@ -299,8 +332,7 @@ public class XFixtureCorpusTest {
                         + "\top=put,payload_id=1,payload_len=1,recid_label=Z,serializer=raw\n"));
         File session = tempDir("xfcorpus-owed");
         XFixtureV2Executor.gunzipAll(m, ROOT, session);
-        XFixtureV2Executor x = new XFixtureV2Executor(m, XFixtureV2Executor.Rules.sealedRoot(),
-                session);
+        XFixtureV2Executor x = new XFixtureV2Executor(m, session);
         XFixtureManifest.V2.Expect direct = javaCell(m, "reject-wal3-segment-at-direct", "rw");
         AssertionError caught = null;
         try {
@@ -332,8 +364,7 @@ public class XFixtureCorpusTest {
         XFixtureManifest.V2 m = doctored(t -> t.replace(row, ""));
         File session = tempDir("xfcorpus-unnamed");
         XFixtureV2Executor.gunzipAll(m, ROOT, session);
-        XFixtureV2Executor x = new XFixtureV2Executor(m, XFixtureV2Executor.Rules.sealedRoot(),
-                session);
+        XFixtureV2Executor x = new XFixtureV2Executor(m, session);
         AssertionError caught = null;
         try {
             x.runCell(javaCell(m, "div-wal3-lsn-exhausted", "rw"), tempDir("xfcorpus-unnamedcell"));
@@ -361,8 +392,7 @@ public class XFixtureCorpusTest {
                 "recid\twal3-java-cleaned\tA\t1\tlive\t117\t120\n"));
         File session = tempDir("xfcorpus-recid");
         XFixtureV2Executor.gunzipAll(m, ROOT, session);
-        XFixtureV2Executor x = new XFixtureV2Executor(m, XFixtureV2Executor.Rules.sealedRoot(),
-                session);
+        XFixtureV2Executor x = new XFixtureV2Executor(m, session);
         AssertionError caught = null;
         try {
             x.runCell(javaCell(m, "wal3-java-cleaned", "rw"), tempDir("xfcorpus-recidcell"));
@@ -372,6 +402,147 @@ public class XFixtureCorpusTest {
         assertTrue("record A's content was compared against nothing", caught != null);
         assertTrue("it failed for another reason: " + caught.getMessage(),
                 caught.getMessage().contains("recid=1"));
+    }
+
+    /**
+     * An oracle row addressed to a cell this engine never runs must fail the suite.
+     *
+     * <p>Both C5j reviewers found this independently and both proved it: codex moved Q8's
+     * {@code bytes} row to {@code reject-wal3-d1-barebase} (a real fixture whose java cells are in
+     * {@code EXPECT_EXCEPTIONS}) and fable moved the {@code reopen} row to the direct cell's absent
+     * {@code ro} mode. Per-cell accounting is blind to both, because it owes only the rows addressed
+     * to the cell being run. Codex's shape is the one reproduced here; fable's is the same rule from
+     * the other side.
+     */
+    @Test public void an_oracle_row_addressed_to_an_absent_cell_fails_the_suite() throws Exception {
+        XFixtureManifest.V2 m = doctored(t -> t.replace(
+                "bytes\tdiv-wal3-lsn-exhausted\tjava\trw\tx.wal.0000000000000004\t187",
+                "bytes\treject-wal3-d1-barebase\tjava\trw\tx.wal.0000000000000004\t187"));
+        refusesSuite("a bytes row addressed to a cell java never runs", m,
+                "whose cell this engine never ran");
+    }
+
+    /**
+     * The {@code bytes} row's VALUE is compared, not merely computed.
+     *
+     * <p>Codex deleted the equality and watched the whole gate pass: the handler read the range,
+     * consumed the row and compared it to nothing, because the whole-file post hash covers the same
+     * bytes and masks the deletion. The row's expected value is doctored to the same LENGTH and a
+     * different value, so the post hash cannot fire and only the equality can.
+     */
+    @Test public void the_bytes_rows_value_is_compared() throws Exception {
+        XFixtureManifest.V2 m = doctored(t -> t.replace("\t187\t8000000000000000",
+                "\t187\t0000000000000000"));
+        File session = tempDir("xfcorpus-hex");
+        XFixtureV2Executor.gunzipAll(m, ROOT, session);
+        AssertionError caught = null;
+        try {
+            new XFixtureV2Executor(m, session).runCell(
+                    javaCell(m, "div-wal3-lsn-exhausted", "rw"), tempDir("xfcorpus-hexcell"));
+        } catch (AssertionError err) {
+            caught = err;
+        }
+        assertTrue("the asserted bytes were read and compared to nothing", caught != null);
+        assertTrue("it failed for another reason: " + caught.getMessage(),
+                caught.getMessage().contains("the asserted bytes"));
+    }
+
+    /**
+     * The {@code reopen} row's FAMILY is graded, not merely the fact that something was thrown.
+     *
+     * <p>Codex deleted the {@code assertFamily} call and watched the gate pass — the reopen still
+     * had to fail, the row was still consumed, and the manifest's family was ignored. Doctoring the
+     * family to one this engine has no predicate for is the input that call never had: the reopen
+     * fails as S2 either way, so only a graded family can tell the two manifests apart.
+     */
+    @Test public void the_reopen_rows_family_is_graded() throws Exception {
+        XFixtureManifest.V2 m = doctored(t -> t.replace(
+                "reopen\tdiv-wal3-lsn-exhausted\tjava\trw\tS2",
+                "reopen\tdiv-wal3-lsn-exhausted\tjava\trw\tR4-floor"));
+        File session = tempDir("xfcorpus-fam");
+        XFixtureV2Executor.gunzipAll(m, ROOT, session);
+        AssertionError caught = null;
+        try {
+            new XFixtureV2Executor(m, session).runCell(
+                    javaCell(m, "div-wal3-lsn-exhausted", "rw"), tempDir("xfcorpus-famcell"));
+        } catch (AssertionError err) {
+            caught = err;
+        }
+        assertTrue("the reopen was graded as 'it threw something'", caught != null);
+        assertTrue("it failed for another reason: " + caught.getMessage(),
+                caught.getMessage().contains("has no predicate in this engine"));
+    }
+
+    /**
+     * An accept cell that asserts nothing must be refused — the C3j guard, restored.
+     *
+     * <p>The first draft of this slice deleted it for the sealed root and called the distribution
+     * seal its replacement. Both reviewers refused that and proved it with this exact input: strip
+     * {@code wal3-java-cleaned}'s six recid rows and the cell passes on nothing but the universal
+     * {@code x.lock} post row. The seal proves copy fidelity; assertion adequacy is a different
+     * property and artifact identity cannot buy it.
+     */
+    @Test public void an_accept_cell_that_asserts_nothing_is_refused() throws Exception {
+        XFixtureManifest.V2 m = doctored(t -> {
+            StringBuilder out = new StringBuilder();
+            for (String line : t.split("\n", -1)) {
+                if (line.startsWith("recid\twal3-java-cleaned\t")) continue;
+                out.append(line).append('\n');
+            }
+            return out.substring(0, out.length() - 1);
+        });
+        File session = tempDir("xfcorpus-bare");
+        XFixtureV2Executor.gunzipAll(m, ROOT, session);
+        AssertionError caught = null;
+        try {
+            new XFixtureV2Executor(m, session).runCell(
+                    javaCell(m, "wal3-java-cleaned", "rw"), tempDir("xfcorpus-barecell"));
+        } catch (AssertionError err) {
+            caught = err;
+        }
+        assertTrue("a writable accept cell with no oracle at all passed", caught != null);
+        assertTrue("it failed for another reason: " + caught.getMessage(),
+                caught.getMessage().contains("asserts nothing about the store it opened"));
+
+        // …and the disjunction is not vacuous in the other direction: the SAME stripped fixture
+        // passes in `ro`, where the read-only write refusal is the claim. Without this, "an accept
+        // cell must assert something" and "ro is exempt" would be indistinguishable.
+        new XFixtureV2Executor(m, session).runCell(
+                javaCell(m, "wal3-java-cleaned", "ro"), tempDir("xfcorpus-barecell-ro"));
+    }
+
+    /**
+     * An {@code applies} row that goes missing while its {@code expect} row stays must fail.
+     *
+     * <p>Codex deleted BOTH set equalities in {@link #corpus_cells_conform} and the suite stayed
+     * green — together they are the whole of plan §5.3 item 6, and neither had an input. The two
+     * row types come from one catalogue and agree by construction, so only a doctored manifest can
+     * separate them.
+     */
+    @Test public void an_applies_row_missing_its_expect_fails() throws Exception {
+        XFixtureManifest.V2 m = doctored(t ->
+                t.replace("applies\twal3-java-cleaned\tjava\tro\n", ""));
+        boolean stillExpected = false;
+        for (XFixtureManifest.V2.Expect e : m.expects)
+            if ("wal3-java-cleaned".equals(e.fixtureId) && "java".equals(e.engine)
+                    && "ro".equals(e.mode)) stillExpected = true;
+        assertTrue("the expect row must survive, or this proves only that a row was deleted",
+                stillExpected);
+        refusesSuite("an applies row deleted while its expect row stays", m,
+                "different sets");
+    }
+
+    /** Runs the whole java suite over a doctored manifest and requires it to refuse, by reason. */
+    private void refusesSuite(String what, XFixtureManifest.V2 m, String because) throws IOException {
+        AssertionError caught = null;
+        try {
+            runEveryJavaCell(m);
+        } catch (AssertionError err) {
+            caught = err;
+        }
+        assertTrue("the suite accepted " + what, caught != null);
+        assertTrue("it failed for another reason: " + caught.getMessage(),
+                caught.getMessage() != null && caught.getMessage().contains(because));
     }
 
     private static XFixtureManifest.V2.Expect javaCell(XFixtureManifest.V2 m, String fid,
@@ -398,14 +569,19 @@ public class XFixtureCorpusTest {
                         + "follow 9223372036854775807"));
 
         refusedFamily("S9's refusal, which is the next branch of the same scan", "S2",
-                new DBException.DataCorruption(
-                        "section LSNs must be consecutive: 12 follows 9"));
+                new DBException.DataCorruption("WAL segment x.wal.4: section LSNs must be "
+                        + "consecutive: 12 at offset 187 after 9"));
         refusedFamily("a corruption verdict from another rule entirely", "S2",
                 new DBException.DataCorruption("WAL file x.wal is not a v3 segment"));
         refusedFamily("an operational failure wearing the right words", "S2",
                 new DBException("section LSN 1 at offset 2 does not follow 0"));
         refusedFamily("a family this engine has no predicate for", "R4-floor",
                 new DBException.DataCorruption("anything at all"));
+        // The pattern matches WHOLE. The first draft used find() on an unanchored fragment while
+        // its comment claimed anchoring, and codex demonstrated the gap with exactly this shape.
+        refusedFamily("the S2 wording embedded in an unrelated message", "S2",
+                new DBException.DataCorruption("prefix: WAL segment x: section LSN 1 at offset 2 "
+                        + "does not follow 0; suffix"));
     }
 
     private static void refusedFamily(String what, String family, Throwable t) {
