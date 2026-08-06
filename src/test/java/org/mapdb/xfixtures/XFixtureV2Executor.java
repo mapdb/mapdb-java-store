@@ -299,8 +299,13 @@ final class XFixtureV2Executor {
         // refuses the write — so deleting either left 2,587 tests green while the recording still
         // attested that the probe "ran". They are given a red by
         // XFixtureCorpusTest#the_read_only_write_probe_fires, which hands this method a writable
-        // handle and a wrong-reason refusal and requires the red for each. That is the same
-        // treatment assertFamily gets, for the same reason.
+        // handle and a wrong-reason refusal and COMPARES the collected reds — a list, so deleting
+        // either input is visible too, which round 4 found it was not. Same treatment as
+        // assertFamily, for the same reason.
+        //
+        // The ordering below is downstream of the assertion because the AssertionError propagates,
+        // not because anything enforces the line order; the probe's own isEmpty check is what
+        // notices if the two are swapped.
         readOnlyHandlesProbed.add(e.fixtureId + "/" + e.mode);
     }
 

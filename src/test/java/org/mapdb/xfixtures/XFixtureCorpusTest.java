@@ -55,11 +55,14 @@ import static org.junit.Assert.fail;
  * firing probe instead ({@link #the_read_only_write_probe_fires},
  * {@link #the_reopen_family_predicate_discriminates}) and the difference is labelled.
  *
- * <p>Two things carry an honest label rather than a mutant, because neither can have one:
- * {@link #the_reader_contract_is_not_vacuous} (nothing observes a leaf assertion, so what is proved
- * is that it FIRES), and the `action` oracle count pin, whose red is masked on this corpus —
- * removing the action row kills the cell at the `bytes` range check first, and every deeper
- * stripping dies to another rule in turn (lesson h).
+ * <p><b>The campaign is 26 NAMED cases, not an exhaustive sweep</b>, and saying otherwise is a
+ * claim the campaign cannot support — round 4 disproved the earlier wording by deleting statements
+ * in this class that nothing red-flags. What remains true: every check the campaign names has a red
+ * that names it. The known residue is the leaf problem — a statement no other statement depends on
+ * is invisible to deletion — which is why assertions here are collected and compared as sets
+ * ({@link XFixtureV2Executor#readOnlyHandlesProbed}, the reds in
+ * {@link #the_read_only_write_probe_fires}) wherever a set is possible, and why
+ * {@link #the_reader_contract_is_not_vacuous} proves FIRING rather than deletion.
  */
 public class XFixtureCorpusTest {
 
@@ -299,17 +302,20 @@ public class XFixtureCorpusTest {
     }
 
     /**
-     * The read-only probe's two assertions FIRE — which no corpus input can show.
+     * The read-only probe's assertion FIRES — which no corpus input can show.
      *
-     * <p>A conforming engine refuses the write, so the red side of both assertions is unreachable
-     * from the corpus and both could be deleted with 2,587 tests green while
-     * {@link XFixtureV2Executor#readOnlyHandlesProbed} still attested that the probe "ran". Both
-     * round-3 reviewers found it; one noted the campaign had written the mutant and never run it,
-     * which is a survivor with no disposition at all.
+     * <p>A conforming engine refuses the write, so the red side is unreachable from the corpus and
+     * the assertion could be deleted with the whole gate green while
+     * {@link XFixtureV2Executor#readOnlyHandlesProbed} still attested the probe "ran". So the method
+     * is handed the two inputs the corpus cannot produce: a WRITABLE handle, and a handle that
+     * refuses for the wrong reason. This is the treatment {@code assertFamily} already gets.
      *
-     * <p>So the method is handed the two inputs the corpus cannot produce: a WRITABLE handle, which
-     * must trip the "accepted" assertion, and a handle that refuses for the wrong reason, which must
-     * trip the message assertion. This is the treatment {@code assertFamily} already gets.
+     * <p><b>The reds are COLLECTED and compared as a list, not asserted one at a time.</b> Round 4
+     * is why: both reviewers deleted an individual probe call — and the {@code isEmpty} assertions
+     * beside them — and watched the gate stay green at 2,590 tests, because nothing observed that a
+     * test arm was still there. A statement that no other statement depends on is invisible to
+     * deletion, however many assertions it contains. Comparing the collected outcomes makes each
+     * input observable: drop either call and the list is short.
      */
     @Test public void the_read_only_write_probe_fires() throws Exception {
         XFixtureManifest.V2 m = manifest();
@@ -317,26 +323,39 @@ public class XFixtureCorpusTest {
         XFixtureV2Executor.gunzipAll(m, ROOT, session);
         XFixtureV2Executor x = new XFixtureV2Executor(m, session);
         XFixtureManifest.V2.Expect ro = javaCell(m, "wal3-java-cleaned", "ro");
+        List<String> reds = new ArrayList<>();
 
         org.mapdb.store.StoreWAL w = new org.mapdb.store.StoreWAL(
                 new File(stage(m, "wal3-java-cleaned", session, tempDir("xfrofire-rw")), "x"));
         try {
-            refuses("a WRITABLE handle", () -> x.assertWriteRefused("probe", ro, w));
+            reds.add(redOf(() -> x.assertWriteRefused("probe", ro, w)));
         } finally {
             w.close();
         }
-        assertTrue("the probe recorded a cell it had just refused",
-                x.readOnlyHandlesProbed.isEmpty());
-
-        // A handle that refuses for a different reason: closed, and not read-only, so the refusal
+        // A handle that refuses for a DIFFERENT reason: closed, and not read-only, so the refusal
         // is `StoreClosed` and its message cannot name the mode.
         org.mapdb.store.StoreWAL closed = new org.mapdb.store.StoreWAL(
                 new File(stage(m, "wal3-java-cleaned", session, tempDir("xfrofire-closed")), "x"));
         closed.close();
-        refuses("a refusal that does not name the mode",
-                () -> x.assertWriteRefused("probe", ro, closed));
-        assertTrue("the probe recorded a cell whose refusal it had just rejected",
-                x.readOnlyHandlesProbed.isEmpty());
+        reds.add(redOf(() -> x.assertWriteRefused("probe", ro, closed)));
+
+        assertEquals("the probe's two inputs and the red each must produce",
+                List.of("ACCEPTED", "WRONG-REASON"), reds);
+        assertTrue("the probe recorded a cell it had just refused — the recording must stay "
+                + "downstream of the assertion", x.readOnlyHandlesProbed.isEmpty());
+    }
+
+    /** Classifies the red one probe input produced, so the reds can be compared as a set. */
+    private static String redOf(Runnable r) {
+        try {
+            r.run();
+            return "NO-RED";
+        } catch (AssertionError e) {
+            String msg = String.valueOf(e.getMessage());
+            if (msg.contains("the write was ACCEPTED")) return "ACCEPTED";
+            if (msg.contains("refused with:")) return "WRONG-REASON";
+            return "OTHER: " + msg;
+        }
     }
 
     private static File stage(XFixtureManifest.V2 m, String fid, File session, File into)
@@ -621,12 +640,13 @@ public class XFixtureCorpusTest {
      * assertion still passing" — the defect C5s's round 3 shipped for two engines — and round 3
      * found all three deletable with the gate green and no mutant naming them.
      *
-     * <p><b>The `action` pin is NOT here, and that is the honest label rather than an omission.</b>
-     * Removing the action row kills the cell first: the file stays 186 bytes and the `bytes` range
-     * check fires, and every deeper stripping dies to the post row, the reopen, or the oracle guard
-     * in turn. Its red is masked on this corpus and cannot be reached through the production path,
-     * so a doctored input would report KILLED while proving the range rule (lesson h). What holds
-     * it up instead is the `action` executor's own reds, which are several.
+     * <p><b>The `action` pin carried an "unreachable red" label in round 3 and both round-4
+     * reviewers falsified it with the same input.</b> The label reasoned cell by cell — remove the
+     * action row and the CELL dies at the bytes range check, and every deeper stripping dies at the
+     * post row, the reopen or the oracle guard in turn. All true, and all beside the point: strip
+     * the WHOLE CELL and every cell-level death is escaped. That is also the pin's own stated
+     * threat, an execution path vanishing from a regenerated corpus — so the label was not just
+     * wrong, it was wrong about the case the pin exists for.
      */
     @Test public void the_oracle_count_pins_fire() throws Exception {
         refusesSuite("a corpus with no java `bytes` row",
@@ -635,6 +655,23 @@ public class XFixtureCorpusTest {
         refusesSuite("a corpus with no java `reopen` row",
                 doctored(t -> dropRows(t, "reopen\tdiv-wal3-lsn-exhausted\tjava\trw\t")),
                 "carries no `reopen` row for java");
+        // Q8's rw cell removed COHERENTLY — its applies, expect, both posts and all three oracle
+        // rows — so `applies == expect` still holds, no row is orphaned, the other four java cells
+        // run clean, and the action pin is the first thing left that can notice.
+        refusesSuite("a corpus with no java `action` row",
+                doctored(t -> {
+                    String out = t;
+                    for (String pfx : new String[] {
+                            "applies\tdiv-wal3-lsn-exhausted\tjava\trw",
+                            "expect\tdiv-wal3-lsn-exhausted\tjava\trw\t",
+                            "post\tdiv-wal3-lsn-exhausted\tjava\trw\t",
+                            "action\tdiv-wal3-lsn-exhausted\tjava\trw\t",
+                            "bytes\tdiv-wal3-lsn-exhausted\tjava\trw\t",
+                            "reopen\tdiv-wal3-lsn-exhausted\tjava\trw\t"})
+                        out = dropRows(out, pfx);
+                    return out;
+                }),
+                "carries no `action` row for java");
     }
 
     /**
