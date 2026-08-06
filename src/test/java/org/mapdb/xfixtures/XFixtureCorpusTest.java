@@ -62,14 +62,16 @@ import static org.junit.Assert.fail;
  * unreachable from any conforming corpus it gets a direct firing probe instead
  * ({@link #the_read_only_write_probe_fires}, {@link #the_reopen_family_predicate_discriminates}).
  *
- * <p>The residue is the leaf problem: a statement no other statement depends on is invisible to
- * deletion. It is pushed down rather than eliminated, by collecting outcomes and comparing them —
- * {@link XFixtureV2Executor#readOnlyHandlesProbed} for the cells probed, the reds list in
- * {@link #the_read_only_write_probe_fires} for that probe's own inputs — so what remains
- * unobserved is one comparison per group instead of every statement in it. Round 5 measured what
- * is left: deleting either of those two comparisons is suite-green, and each is then caught by the
- * other's mutant. {@link #the_reader_contract_is_not_vacuous} is the one check that proves FIRING
- * rather than deletion, and says so.
+ * <p><b>The residue is the leaf problem</b>: a statement no other statement depends on is
+ * invisible to deletion, and the last assertion in any chain is one. It is pushed DOWN rather than
+ * eliminated, by collecting outcomes and comparing them once — the cells probed
+ * ({@link XFixtureV2Executor#readOnlyHandlesProbed}), that probe's own inputs
+ * ({@link #the_read_only_write_probe_fires}), the two openers' verdicts and file sets
+ * ({@link #a_direct_cell_sent_to_the_wal_opener_goes_red}) — so <b>one comparison per group</b> is
+ * unobserved rather than every statement in it. Reviewers measured each group as it was collapsed:
+ * deleting a group's comparison is suite-green, and where two groups guard each other a mutant
+ * over one catches the other's loss. {@link #the_reader_contract_is_not_vacuous} is the one check
+ * that proves FIRING rather than deletion, and says so.
  */
 public class XFixtureCorpusTest {
 
@@ -231,33 +233,38 @@ public class XFixtureCorpusTest {
         assertTrue("the corpus has no java `direct` cell, so this mutant grades nothing",
                 direct != null);
 
-        // The control: through the opener the manifest names, the cell passes and leaves exactly
-        // the two files the manifest accounts for — `x` and the lock java's StoreDirect takes.
+        // ONE comparison for all four facts this mutant rests on: the control's verdict and file
+        // set, and the misrouted open's. They are independent — a future java that refused D1 would
+        // keep the file sets and lose the verdicts — but each assertion written separately is a
+        // leaf the whole gate can lose without noticing, and rounds 8 and 9 measured three of them
+        // here one at a time. Collapsing them leaves one leaf for the group instead of four.
+        final XFixtureManifest.V2.Expect cellRow = direct;
         File cell = tempDir("xfcorpusmutant");
-        x.runCell(direct, cell, XFixtureV2Executor.Dispatch.BY_MANIFEST);
-        assertEquals("the direct cell's file set", new TreeSet<>(List.of("x", "x.lock")),
-                XFixtureV2Executor.listNames(cell));
-
+        String control = outcomeOf(() -> x.runCell(cellRow, cell, XFixtureV2Executor.Dispatch.BY_MANIFEST))
+                + " " + XFixtureV2Executor.listNames(cell);
         File cell2 = tempDir("xfcorpusmutant2");
-        AssertionError caught = null;
-        try {
-            x.runCell(direct, cell2, XFixtureV2Executor.Dispatch.ALWAYS_WAL3);
-        } catch (AssertionError err) {
-            caught = err;
-        }
-        assertTrue("the direct cell passed through the WAL opener, so the opener column is "
-                + "decoration on this engine", caught != null);
-        // The verdict AND the file set in one comparison. They are independent facts — a future
-        // java that refused D1 would keep the second and lose the first — but asserting them
-        // separately made the file-set half a leaf that the whole gate could lose without noticing,
-        // which round 8 measured. One equality has one leaf instead of two.
-        assertEquals("the misrouted open's verdict and what it left behind",
-                List.of("but the store opened", "[x, x.lock, x.wal.0000000000000001]"),
-                List.of(caught.getMessage() != null
-                                && caught.getMessage().contains("but the store opened")
-                                ? "but the store opened" : String.valueOf(caught.getMessage()),
-                        XFixtureV2Executor.listNames(cell2).toString()));
+        String misrouted = outcomeOf(() -> x.runCell(cellRow, cell2, XFixtureV2Executor.Dispatch.ALWAYS_WAL3))
+                + " " + XFixtureV2Executor.listNames(cell2);
+        assertEquals("the direct cell through each opener: verdict, then what it left behind",
+                List.of("PASSED [x, x.lock]",
+                        "RED(but the store opened) [x, x.lock, x.wal.0000000000000001]"),
+                List.of(control, misrouted));
     }
+
+    /** {@code PASSED}, or {@code RED(<the phrase the caller is entitled to>)} for a refusal. */
+    private static String outcomeOf(RunsCell r) {
+        try {
+            r.run();
+            return "PASSED";
+        } catch (AssertionError e) {
+            String m = String.valueOf(e.getMessage());
+            return "RED(" + (m.contains("but the store opened") ? "but the store opened" : m) + ")";
+        } catch (IOException e) {
+            throw new AssertionError(e);
+        }
+    }
+
+    private interface RunsCell { void run() throws IOException; }
 
     // ------------------------------------------------------------- ro, both directions
 
@@ -522,8 +529,8 @@ public class XFixtureCorpusTest {
                 doctored(t -> t + "action\t" + absent + "\tjava\trw\tcommit_one_record"
                         + "\top=put,payload_id=1,payload_len=1,recid_label=Z,serializer=raw\n"),
                 "action " + absent + "/rw");
-        // …and `post`, the fourth addressed row type, which contract §2.3's sentence does not name
-        // and which round 2 proved was droppable in silence on both sides of the fence.
+        // …and `post`, the fourth addressed row type — named by contract §2.3 since round 3, and
+        // droppable in silence on both sides of the fence before it was.
         refusesSuite("a post row addressed to a cell java never runs",
                 doctored(t -> t + "post\t" + absent + "\tjava\tro\tz.lock\tunchanged\n"),
                 "post " + absent + "/ro");
@@ -787,10 +794,18 @@ public class XFixtureCorpusTest {
     /**
      * The consumption accountant, unit-tested.
      *
-     * <p>It is the only thing that makes "executes" distinguishable from "parses and drops" for the
-     * {@code bytes} and {@code reopen} rows: the whole-file {@code post} hash subsumes a
-     * byte-at-offset assertion, and nothing at all observes a dropped {@code reopen}. Deleting the
-     * reopen call in the executor is red only because of this.
+     * <p>It is the only thing that makes "executes" distinguishable from "parses and drops" for
+     * three of the four addressed row types — every one except {@code action}, which has a failure
+     * of its own. The whole-file {@code post} hash subsumes a byte-at-offset assertion, the
+     * two-sided unnamed-input rule silently re-verifies a file whose {@code unchanged} row was
+     * dropped, and nothing at all observes a dropped {@code reopen}.
+     *
+     * <p><b>Not "only because of this".</b> An earlier version of this sentence said the accountant
+     * was the sole red for all three, and a reviewer disproved it by mutation: delete the reopen
+     * call AND the accountant and the suite is still red, at
+     * {@link #the_reopen_rows_family_is_graded}, because that doctored case was added later. The
+     * accountant is what made the drop visible when there was nothing else; it is no longer alone,
+     * and saying otherwise is a claim about the rest of the suite that nothing maintains.
      */
     @Test public void an_unconsumed_oracle_row_is_a_failure() {
         Object a = new Object(), b = new Object();

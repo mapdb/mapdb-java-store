@@ -53,9 +53,10 @@ import static org.junit.Assert.fail;
  * Every {@code action}, {@code bytes}, {@code reopen} and {@code post} row addressed to the cell
  * being run must be consumed by a handler ({@link Consumption}). Of those four rows only the
  * {@code action} has a failure of its own — the whole-file {@code post} hash subsumes a
- * byte-at-offset assertion, a dropped {@code post} row is re-verified by the two-sided
- * unnamed-input rule, and <em>nothing at all</em> observes a dropped {@code reopen} — so deleting
- * any of those three calls turns the suite red here and nowhere else.
+ * byte-at-offset assertion, a dropped {@code unchanged} row is silently re-verified by the two-sided
+ * unnamed-input rule, and <em>nothing at all</em> observes a dropped {@code reopen}. The accountant
+ * is what made each of those visible; it is not the only red for all of them today, because later
+ * rounds added doctored cases that also fire.
  *
  * <p>That is only half the rule, and shipping it as the whole rule is what both C5j reviewers
  * broke independently: an accountant built per cell cannot see a row addressed to a cell that does
