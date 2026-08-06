@@ -529,7 +529,7 @@ public class XFixtureCorpusTest {
                 doctored(t -> t + "action\t" + absent + "\tjava\trw\tcommit_one_record"
                         + "\top=put,payload_id=1,payload_len=1,recid_label=Z,serializer=raw\n"),
                 "action " + absent + "/rw");
-        // …and `post`, the fourth addressed row type — named by contract §2.3 since round 3, and
+        // …and `post`, the fourth addressed row type — named by contract §2.3 since round 2, and
         // droppable in silence on both sides of the fence before it was.
         refusesSuite("a post row addressed to a cell java never runs",
                 doctored(t -> t + "post\t" + absent + "\tjava\tro\tz.lock\tunchanged\n"),
