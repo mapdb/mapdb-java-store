@@ -172,10 +172,18 @@ public class XFixtureCorpusTest {
         // execution path could be absent from the corpus and every assertion above would still
         // pass — the shape §7 of the C5 plan exists to stop, and the one both round-3 reviewers
         // found revision 3 had shipped for rust and zig.
+        // Counted over the rows addressed to cells that RAN, not over every java-addressed row.
+        // The difference is what stops these pins from masking the addressing check above: an
+        // orphan row added to the manifest would otherwise move a count to 2 and fire HERE, so
+        // every doctored addressing case would report killed while proving a different rule
+        // (lesson h — an input that trips several checks measures the first).
         int actions = 0, bytes = 0, reopens = 0;
-        for (XFixtureManifest.V2.Action a : m.actions) if ("java".equals(a.engine)) actions++;
-        for (XFixtureManifest.V2.Bytes b : m.bytes) if ("java".equals(b.engine)) bytes++;
-        for (XFixtureManifest.V2.Reopen r : m.reopens) if ("java".equals(r.engine)) reopens++;
+        for (XFixtureManifest.V2.Action a : m.actions)
+            if ("java".equals(a.engine) && ran.contains(a.fixtureId + "/" + a.mode)) actions++;
+        for (XFixtureManifest.V2.Bytes b : m.bytes)
+            if ("java".equals(b.engine) && ran.contains(b.fixtureId + "/" + b.mode)) bytes++;
+        for (XFixtureManifest.V2.Reopen r : m.reopens)
+            if ("java".equals(r.engine) && ran.contains(r.fixtureId + "/" + r.mode)) reopens++;
         assertEquals("the corpus carries no `action` row for java, so this engine's action "
                 + "executor has no input at all", 1, actions);
         assertEquals("the corpus carries no `bytes` row for java", 1, bytes);
@@ -411,15 +419,33 @@ public class XFixtureCorpusTest {
      * {@code bytes} row to {@code reject-wal3-d1-barebase} (a real fixture whose java cells are in
      * {@code EXPECT_EXCEPTIONS}) and fable moved the {@code reopen} row to the direct cell's absent
      * {@code ro} mode. Per-cell accounting is blind to both, because it owes only the rows addressed
-     * to the cell being run. Codex's shape is the one reproduced here; fable's is the same rule from
-     * the other side.
+     * to the cell being run. All four addressed row types get their own doctored input, because the
+     * check is one loop per type and round 2 deleted two of them green when only the {@code bytes}
+     * shape had a red — including the exact shape one reviewer had filed in round 1.
      */
     @Test public void an_oracle_row_addressed_to_an_absent_cell_fails_the_suite() throws Exception {
-        XFixtureManifest.V2 m = doctored(t -> t.replace(
-                "bytes\tdiv-wal3-lsn-exhausted\tjava\trw\tx.wal.0000000000000004\t187",
-                "bytes\treject-wal3-d1-barebase\tjava\trw\tx.wal.0000000000000004\t187"));
-        refusesSuite("a bytes row addressed to a cell java never runs", m,
-                "whose cell this engine never ran");
+        // One doctored input per ROW TYPE, because the check is one loop per row type and round 2
+        // deleted two of them green when only the `bytes` shape had a red. Each case ADDS an orphan
+        // row rather than moving a real one: moving the action away leaves the cell 186 bytes and
+        // the `bytes` range check fires first, which would report KILLED while proving a different
+        // rule (lesson h). The expected message names the row type, so no case can pass on another
+        // loop's refusal.
+        String absent = "reject-wal3-d1-barebase";   // a real fixture with no java cell at all
+        refusesSuite("a bytes row addressed to a cell java never runs",
+                doctored(t -> t + "bytes\t" + absent + "\tjava\trw\tx\t0\tab\n"),
+                "bytes " + absent + "/rw");
+        refusesSuite("a reopen row addressed to a cell java never runs",
+                doctored(t -> t + "reopen\t" + absent + "\tjava\tro\tS2\n"),
+                "reopen " + absent + "/ro");
+        refusesSuite("an action row addressed to a cell java never runs",
+                doctored(t -> t + "action\t" + absent + "\tjava\trw\tcommit_one_record"
+                        + "\top=put,payload_id=1,payload_len=1,recid_label=Z,serializer=raw\n"),
+                "action " + absent + "/rw");
+        // …and `post`, the fourth addressed row type, which contract §2.3's sentence does not name
+        // and which round 2 proved was droppable in silence on both sides of the fence.
+        refusesSuite("a post row addressed to a cell java never runs",
+                doctored(t -> t + "post\t" + absent + "\tjava\tro\tz.lock\tunchanged\n"),
+                "post " + absent + "/ro");
     }
 
     /**

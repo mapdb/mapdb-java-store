@@ -132,6 +132,12 @@ final class XFixtureV2Executor {
         for (XFixtureManifest.V2.Reopen r : m.reopens)
             if (ENGINE.equals(r.engine) && !ran.contains(r.fixtureId + "/" + r.mode))
                 orphans.add("reopen " + r.fixtureId + "/" + r.mode + " " + r.family);
+        // `post` is the FOURTH addressed row type and contract §2.3's consumption sentence does
+        // not name it, so nothing on either side of the fence caught a post row addressed to a
+        // cell no engine runs — round 2 proved it green. Covered here, and §2.3 now says so.
+        for (XFixtureManifest.V2.Post p : m.posts)
+            if (ENGINE.equals(p.engine) && !ran.contains(p.fixtureId + "/" + p.mode))
+                orphans.add("post " + p.fixtureId + "/" + p.mode + " " + p.relName);
         assertTrue("oracle rows addressed to java whose cell this engine never ran, so no "
                 + "accountant could ever owe them: " + orphans, orphans.isEmpty());
     }
@@ -200,10 +206,7 @@ final class XFixtureV2Executor {
             boolean has = expects != null && !expects.isEmpty();
             requireSomeOracle(ctx, e, has);
             if (has) FixtureWriter.assertReaderContract(s, expects, ctx);
-            if (ro) {
-                assertWriteRefused(ctx, s);
-                readOnlyHandlesProbed.add(e.fixtureId + "/" + e.mode);
-            }
+            if (ro) assertWriteRefused(ctx, e, s);
         } finally {
             s.close();
         }
@@ -258,7 +261,7 @@ final class XFixtureV2Executor {
      * committed section. So the pair "rw commits, ro refuses" is carried by the corpus, and a
      * refusal that fired in both modes would fail that cell.
      */
-    private static void assertWriteRefused(String ctx, StoreWAL s) {
+    private void assertWriteRefused(String ctx, XFixtureManifest.V2.Expect e, StoreWAL s) {
         DBException refusal = null;
         boolean accepted;
         try {
@@ -271,6 +274,11 @@ final class XFixtureV2Executor {
         assertTrue(ctx + ": a write through the read-only handle was ACCEPTED", !accepted);
         assertTrue(ctx + ": the read-only refusal does not say so: " + refusal.getMessage(),
                 refusal.getMessage() != null && refusal.getMessage().contains("open read-only"));
+        // LAST, and inside this method rather than beside its call. Round 2 proved the difference:
+        // with the recording at the call site, deleting `assertWriteRefused(...)` alone and keeping
+        // the `add` left the whole gate green — the set observed that the bookkeeping ran, not that
+        // the probe did. Downstream of both assertions, the set cannot be reached without them.
+        readOnlyHandlesProbed.add(e.fixtureId + "/" + e.mode);
     }
 
     /** A reject cell must fail with the engine's corruption class, through the named opener. */
