@@ -43,26 +43,30 @@ import static org.junit.Assert.fail;
  * for, and it is now the SAME rule for both roots ({@link XFixtureV2Executor#requireSomeOracle}).
  *
  * <h2>The deletion campaign</h2>
- * Every check in the executor and in this class is deleted one at a time and the suite must go red
- * for the reason each names — 26 mutants, all killed, in
- * {@code scratchpad/mut.py} + {@code mutants.sh}. Three review rounds grew it from 10.
+ * <b>30 NAMED cases</b>, in {@code scratchpad/mut.py} + {@code mutants.sh}: each deletes one check,
+ * or one call to one, and the suite must go red for the reason that case names. All 30 kill. Five
+ * review rounds grew it from 10.
  *
- * <p><b>Most of those checks are green with the check deleted unless something supplies an
- * input</b>, and that is what all three rounds of both reviews were about. They are closed with
- * DOCTORED manifests routed through the PRODUCTION path — never by calling the check directly,
- * which is a mistake this slice made twice and which proves the method while leaving its call
- * unobserved. Where a check's red is unreachable from any conforming corpus, it gets a direct
- * firing probe instead ({@link #the_read_only_write_probe_fires},
- * {@link #the_reopen_family_predicate_discriminates}) and the difference is labelled.
+ * <p><b>It is a named campaign, not an exhaustive sweep,</b> and the difference is not pedantry —
+ * an earlier version of this paragraph claimed the sweep and round 4 disproved it by deleting
+ * statements in this class that nothing red-flags. What is true is narrower: every check the
+ * campaign names has a red that names it.
  *
- * <p><b>The campaign is 26 NAMED cases, not an exhaustive sweep</b>, and saying otherwise is a
- * claim the campaign cannot support — round 4 disproved the earlier wording by deleting statements
- * in this class that nothing red-flags. What remains true: every check the campaign names has a red
- * that names it. The known residue is the leaf problem — a statement no other statement depends on
- * is invisible to deletion — which is why assertions here are collected and compared as sets
- * ({@link XFixtureV2Executor#readOnlyHandlesProbed}, the reds in
- * {@link #the_read_only_write_probe_fires}) wherever a set is possible, and why
- * {@link #the_reader_contract_is_not_vacuous} proves FIRING rather than deletion.
+ * <p><b>Most of those checks are green when deleted unless something supplies an input</b>, which
+ * is what all five rounds of both reviews were about. They are closed with DOCTORED manifests
+ * routed through the PRODUCTION path — never by calling the check directly, a mistake this slice
+ * made twice, which proves the method and leaves its call unobserved. Where a check's red is
+ * unreachable from any conforming corpus it gets a direct firing probe instead
+ * ({@link #the_read_only_write_probe_fires}, {@link #the_reopen_family_predicate_discriminates}).
+ *
+ * <p>The residue is the leaf problem: a statement no other statement depends on is invisible to
+ * deletion. It is pushed down rather than eliminated, by collecting outcomes and comparing them —
+ * {@link XFixtureV2Executor#readOnlyHandlesProbed} for the cells probed, the reds list in
+ * {@link #the_read_only_write_probe_fires} for that probe's own inputs — so what remains
+ * unobserved is one comparison per group instead of every statement in it. Round 5 measured what
+ * is left: deleting either of those two comparisons is suite-green, and each is then caught by the
+ * other's mutant. {@link #the_reader_contract_is_not_vacuous} is the one check that proves FIRING
+ * rather than deletion, and says so.
  */
 public class XFixtureCorpusTest {
 
@@ -310,8 +314,8 @@ public class XFixtureCorpusTest {
      * is handed the two inputs the corpus cannot produce: a WRITABLE handle, and a handle that
      * refuses for the wrong reason. This is the treatment {@code assertFamily} already gets.
      *
-     * <p><b>The reds are COLLECTED and compared as a list, not asserted one at a time.</b> Round 4
-     * is why: both reviewers deleted an individual probe call — and the {@code isEmpty} assertions
+     * <p><b>The reds are COLLECTED and compared as an ordered list, not asserted one at a
+     * time.</b> Round 4 is why: both reviewers deleted an individual probe call — and the {@code isEmpty} assertions
      * beside them — and watched the gate stay green at 2,590 tests, because nothing observed that a
      * test arm was still there. A statement that no other statement depends on is invisible to
      * deletion, however many assertions it contains. Comparing the collected outcomes makes each
@@ -345,7 +349,17 @@ public class XFixtureCorpusTest {
                 + "downstream of the assertion", x.readOnlyHandlesProbed.isEmpty());
     }
 
-    /** Classifies the red one probe input produced, so the reds can be compared as a set. */
+    /**
+     * Classifies the red one probe input produced, so the two can be compared as an ORDERED list —
+     * the order is what binds {@code ACCEPTED} to the writable input and {@code WRONG-REASON} to the
+     * closed one, which a set would lose.
+     *
+     * <p>Classification is by substring, so an unrelated {@code AssertionError} carrying either
+     * phrase would be labelled as the wanted red. Sound for the two inputs here — both lambdas call
+     * only {@code assertWriteRefused}, and the store's own failures are {@code DBException}s caught
+     * inside it — and stated rather than left implied, because it is a provenance claim about the
+     * message and not about where it came from.
+     */
     private static String redOf(Runnable r) {
         try {
             r.run();
