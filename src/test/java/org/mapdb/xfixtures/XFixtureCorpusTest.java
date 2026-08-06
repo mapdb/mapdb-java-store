@@ -42,12 +42,13 @@ import static org.junit.Assert.fail;
  * assert-nothing accept cell pass. The guard is back, as the disjunction plan §5.3 item 5 asked
  * for, and it is now the SAME rule for both roots ({@link XFixtureV2Executor#requireSomeOracle}).
  *
- * <h2>The deletion campaign</h2>
- * <b>30 NAMED cases</b>, in {@code scratchpad/mut.py} + {@code mutants.sh}. Each mutates one named
- * check, one named call to one, or one named combination — most are deletions, but {@code roorder}
- * MOVES a statement, {@code romode} REPLACES an opener selection, and {@code actionbytes} and
- * {@code applieseq} each touch more than one site on purpose. The suite must then go red for the
- * reason that case names. All 30 kill.
+ * <h2>The mutation campaign</h2>
+ * A set of NAMED cases, in {@code scratchpad/mut.py} + {@code mutants.sh}. Each case mutates one
+ * named site — by deleting it, replacing it, or moving it — or a named combination of sites, and
+ * the suite must then go red for the reason that case names. Every case kills; the runner exits
+ * non-zero if any survives, mis-kills, or fails to apply, so the count and the result are read from
+ * a run rather than asserted here. Three attempts to state them in prose were wrong three different
+ * ways.
  *
  * <p><b>It is a named campaign, not an exhaustive sweep,</b> and the difference is not pedantry —
  * an earlier version of this paragraph claimed the sweep and round 4 disproved it by deleting
@@ -55,7 +56,7 @@ import static org.junit.Assert.fail;
  * campaign names has a red that names it.
  *
  * <p><b>Most of those checks are green when deleted unless something supplies an input</b>, which
- * is what all five rounds of both reviews were about. They are closed with DOCTORED manifests
+ * is what every round of both reviews was about. They are closed with DOCTORED manifests
  * routed through the PRODUCTION path — never by calling the check directly, a mistake this slice
  * made twice, which proves the method and leaves its call unobserved. Where a check's red is
  * unreachable from any conforming corpus it gets a direct firing probe instead
