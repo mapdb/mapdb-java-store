@@ -18,14 +18,15 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 /**
- * Runs the schema-v2 <b>preflight corpus</b> root against this engine (Stage C, slice C5j).
+ * Runs the schema-v2 <b>frozen corpus</b> root against this engine (Stage C, slice C6j).
  *
  * <p>{@code /xfixtures-v2-corpus/} is a byte-identical copy of the {@code root}-marked files of
- * {@code todo/store-cross/preflight-v2/} — twelve files: {@code MANIFEST.tsv} and one blob per
+ * {@code todo/store-cross/corpus-v2/} — eighty-nine files: {@code MANIFEST.tsv} and one blob per
  * {@code file} row, and nothing else (C5 plan §4c). It is the {@code v2-oracle} profile: it carries
  * {@code applies}, {@code action}, {@code bytes} and {@code reopen} rows, all four of which this
  * engine EXECUTES. The static {@code /xfixtures-v2/} sample stays {@code v2-core} and is untouched
- * by C5; {@link XFixtureConformanceTest} still owns it, through the same executor.
+ * by C6; {@link XFixtureConformanceTest} still owns it, through the same executor. The dual reader
+ * (v1 sample + v2 sample + this corpus root) is what keeps the cutover a data commit.
  *
  * <h2>What makes the copy more than a copy</h2>
  * Three roots hand-copied between four repositories is how the static sample survives today only by
@@ -78,14 +79,16 @@ public class XFixtureCorpusTest {
     static final String ROOT = "/xfixtures-v2-corpus/";
 
     /**
-     * {@code freeze_v2.PREFLIGHT_DIST_SEALS["java"]}, and the referent is
-     * {@code todo/store-cross/preflight-v2/} — never this directory. A constant regenerated from
-     * the tree it grades certifies that the tree equals itself.
+     * {@code freeze_v2.CORPUS_DIST_SEALS["java"]}, and the referent is
+     * {@code todo/store-cross/corpus-v2/} — never this directory. A constant regenerated from
+     * the tree it grades certifies that the tree equals itself. Pinning the corpus digest in
+     * this repository (C6) is the trust upgrade over C5t's disposable staged worktree: four
+     * repositories must move together.
      *
-     * <p>Regenerate with {@code python3 todo/store-cross/freeze_v2.py --dist-seals --preflight}.
+     * <p>Regenerate with {@code python3 todo/store-cross/freeze_v2.py --dist-seals --corpus}.
      */
     static final String DIST_SEAL =
-            "3c0442fb100cdcbbafbccb753420950a04c3ee28a9efbe51f00a8bffa7102415";
+            "f805a3c291e4b2bf4a405451e46116d0e4fa99e896e30d12e8aad9807f1e078f";
 
     private final List<File> dirs = new ArrayList<>();
 
@@ -204,7 +207,7 @@ public class XFixtureCorpusTest {
         // TWO since C5t: Q8's `S2` row after the action, plus the `direct-magic` row plan §3.12
         // derives for `reject-wal3-segment-at-direct` — the first reopen row this engine runs on a
         // REJECT cell, where it grades the refusal's family and that the refusal is STABLE.
-        assertEquals("the corpus carries no `reopen` row for java", 2, reopens);
+        assertEquals("the corpus carries no `reopen` row for java", 4, reopens);
     }
 
     // -------------------------------------------------------------- the §3.11 mutant
@@ -984,7 +987,7 @@ public class XFixtureCorpusTest {
      *
      * <p>What it does not certify, stated because the whole-artifact seal does certify it:
      * provenance. The four repo commits and {@code sync_v2.py}'s digest are in
-     * {@code PREFLIGHT_SEAL}'s preimage and not in this one — they are not properties of the
+     * {@code CORPUS_SEAL}'s preimage and not in this one — they are not properties of the
      * distributed bytes and this repository has no way to check them.
      */
     @Test public void the_corpus_root_matches_todos_sealed_tree() throws Exception {
@@ -997,8 +1000,8 @@ public class XFixtureCorpusTest {
             pre.append("file\t").append(n).append('\t').append(b.length).append('\t')
                     .append(FixtureWriter.sha256Hex(b)).append("\troot\n");
         }
-        assertEquals("this root is not todo/store-cross/preflight-v2/'s `root` slice. Regenerate "
-                        + "with `freeze_v2.py --dist-seals --preflight`, and copy the TREE too — a "
+        assertEquals("this root is not todo/store-cross/corpus-v2/'s `root` slice. Regenerate "
+                        + "with `freeze_v2.py --dist-seals --corpus`, and copy the TREE too — a "
                         + "constant updated alone certifies whatever is here",
                 DIST_SEAL,
                 FixtureWriter.sha256Hex(pre.toString().getBytes(StandardCharsets.UTF_8)));
