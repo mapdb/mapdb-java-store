@@ -433,9 +433,16 @@ final class XFixtureV2Executor {
      * demonstrated the gap — a message with the S2 wording embedded in unrelated text passed. The
      * refusal this grades is one line of the reference and its whole form is knowable, so matching
      * the whole form is what the check should say.
+     *
+     * <p><b>The NAME is opaque.</b> It was {@code [^:]+}, which forbids a legal segment filename
+     * containing a colon and so refuses a genuine refusal about one — codex round 2, the same
+     * defect round 1 found in rust's D1 predicate, in a third place. The rest of the sentence is
+     * fixed and the name is whatever lies between two fixed markers, so the name group is reluctant
+     * and the marker that ends it is spelled out in full: only {@code ": section LSN "} can, and
+     * {@code matches()} anchors both ends.
      */
     static final Pattern S2 = Pattern.compile(
-            "WAL segment [^:]+: section LSN -?\\d+ at offset \\d+ does not follow -?\\d+");
+            "WAL segment .+?: section LSN -?\\d+ at offset \\d+ does not follow -?\\d+");
 
     /**
      * Asserts a refusal belongs to the named contract family.

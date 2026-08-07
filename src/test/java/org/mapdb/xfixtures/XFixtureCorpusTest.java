@@ -850,6 +850,13 @@ public class XFixtureCorpusTest {
         refusedFamily("the S2 wording embedded in an unrelated message", "S2",
                 new DBException.DataCorruption("prefix: WAL segment x: section LSN 1 at offset 2 "
                         + "does not follow 0; suffix"));
+        // The NAME is opaque. It was matched as `[^:]+`, which refuses a genuine refusal about a
+        // legal filename containing a colon — codex round 2, the same defect round 1 found in
+        // rust's D1 predicate. The case above keeps the anchoring honest: a reluctant name group
+        // must still not let the wording be EMBEDDED in something else.
+        XFixtureV2Executor.assertFamily("a segment name containing the delimiter", "S2",
+                new DBException.DataCorruption("WAL segment od: dd/x.wal.4: section LSN 1 at "
+                        + "offset 2 does not follow 0"));
 
         // C5t's second family, and the pair that makes the family READING falsifiable.
         Throwable magic = new DBException.DataCorruption("not a mapdb StoreDirect file (bad magic)");
