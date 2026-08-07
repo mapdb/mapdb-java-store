@@ -12,25 +12,15 @@ import java.util.Map;
 import static org.mapdb.xfixtures.FixtureWriter.check;
 
 /**
- * Reads an xfixtures {@code MANIFEST.tsv} of schema version 1 or 2, dispatching on the
- * {@code version} row and on nothing else.
+ * Reads an xfixtures {@code MANIFEST.tsv} of <b>schema version 2</b>.
  *
- * <p><b>Why the dispatch rule is spelled out rather than assumed.</b> The two schemas' {@code
- * expect} rows have <em>the same arity and different columns</em>:
+ * <p>Stage C slice <b>C7j</b> retired the dual v1/v2 dispatch: schema version 1 is refused
+ * outright. The arity collision that forced the dual reader still matters as history —
+ * v1 and v2 {@code expect} rows were both seven fields with different columns — so the
+ * version row remains a hard gate rather than an arity-keyed guess. A version-1 line
+ * fails here with a message that names the retirement; an unknown version fails too.
  *
- * <pre>
- *   v1: expect &lt;fid&gt; &lt;engine&gt; &lt;verdict&gt; &lt;opener&gt; &lt;placeAs&gt; &lt;openArg&gt;   (7)
- *   v2: expect &lt;fid&gt; &lt;engine&gt; &lt;mode&gt;    &lt;verdict&gt; &lt;opener&gt; &lt;openArg&gt;   (7)
- * </pre>
- *
- * v2 dropped {@code placeAs} and gained {@code mode}. A reader that keyed on the field count
- * would read v2's {@code mode} as v1's {@code verdict} and v2's {@code verdict} as v1's
- * {@code opener} — and would get away with it today only because {@code rw} happens not to be in
- * the verdict vocabulary. So the version row selects the parser, the two parsers share no row
- * struct, and {@link V1} and {@link V2} are separate types on purpose: the schemas are not a
- * superset relation and modelling them as one is what makes the confusion above possible.
- *
- * <p>Both parsers <b>refuse an unknown row type</b>. That is not defensive decoration: it is the
+ * <p>The parser <b>refuses an unknown row type</b>. That is not defensive decoration: it is the
  * only thing standing between a future row type and a suite that silently ignores it while
  * reporting green, and — because the python validator cannot test a Java parser — it is checked
  * by a negative case in {@code XFixtureConformanceTest}.
@@ -55,41 +45,10 @@ final class XFixtureManifest {
 
     static final List<String> MODES = List.of("rw", "ro");
 
-    // ---------------------------------------------------------------- schema v1
-
-    static final class V1 {
-        static final class FileRow {
-            String fixtureId, relName, rawSha, gzSha;
-            long rawLen;
-        }
-
-        static final class Expect {
-            String fixtureId, engine, verdict, opener, placeAs, openArg;
-        }
-
-        final Map<String, String> fixtureKinds = new LinkedHashMap<>();
-        final List<FileRow> files = new ArrayList<>();
-        final List<Expect> expects = new ArrayList<>();
-        final Map<String, List<FixtureWriter.RecidExpect>> recids = new HashMap<>();
-
-        /** Schema v1 gives every fixture exactly one file row (asserted while resolving). */
-        FileRow fileOf(String fixtureId) {
-            FileRow found = null;
-            for (FileRow f : files) {
-                if (!f.fixtureId.equals(fixtureId)) continue;
-                check(found == null,
-                        "fixture " + fixtureId + " has more than one file row (schema v1 forbids that)");
-                found = f;
-            }
-            check(found != null, "fixture " + fixtureId + " has no file row");
-            return found;
-        }
-    }
-
     // ---------------------------------------------------------------- schema v2
 
     static final class V2 {
-        /** A v2 file row. Distinct from {@link V1.FileRow} even though the columns coincide today. */
+        /** One {@code file} row of a v2 namespace fixture. */
         static final class FileRow {
             String fixtureId, relName, rawSha, gzSha;
             long rawLen;
@@ -180,25 +139,23 @@ final class XFixtureManifest {
         }
     }
 
-    // ---------------------------------------------------------------- dispatch
+    // ---------------------------------------------------------------- load / version gate
 
-    /** One loaded manifest: exactly one of {@link #v1} and {@link #v2} is non-null. */
+    /** One loaded schema-v2 manifest. {@link #version} is always 2; kept so call sites can pin it. */
     static final class Loaded {
         final int version;
-        final V1 v1;
         final V2 v2;
 
-        private Loaded(int version, V1 v1, V2 v2) {
+        private Loaded(int version, V2 v2) {
             this.version = version;
-            this.v1 = v1;
             this.v2 = v2;
         }
     }
 
     /**
-     * Loads {@code <resourceRoot>MANIFEST.tsv} from the classpath and parses it with the parser
-     * its version row names. A missing manifest is a HARD failure: it means the fixture sync step
-     * was never run for this checkout, and skipping would report green for an empty suite.
+     * Loads {@code <resourceRoot>MANIFEST.tsv} from the classpath and parses it as schema v2.
+     * A missing manifest is a HARD failure: it means the fixture sync step was never run for this
+     * checkout, and skipping would report green for an empty suite.
      */
     static Loaded load(String resourceRoot) throws IOException {
         byte[] bytes;
@@ -223,79 +180,15 @@ final class XFixtureManifest {
         check(head.length == 2 && head[0].equals("version"),
                 "the first manifest data line is not a version row: " + lines[first]);
         switch (head[1]) {
-            case "1": return new Loaded(1, parseV1(lines, first + 1), null);
-            case "2": return new Loaded(2, null, parseV2(lines, first + 1));
-            default: throw new AssertionError("unsupported manifest schema version " + head[1]
-                    + " — this reader knows 1 and 2; refusing rather than guessing at the columns");
+            case "1":
+                throw new AssertionError("manifest schema version 1 is retired (Stage C, C7j) — "
+                        + "this reader speaks only schema 2; the dual v1/v2 dispatch is gone");
+            case "2":
+                return new Loaded(2, parseV2(lines, first + 1));
+            default:
+                throw new AssertionError("unsupported manifest schema version " + head[1]
+                        + " — this reader speaks only schema 2; refusing rather than guessing at the columns");
         }
-    }
-
-    // ---------------------------------------------------------------- v1 parser
-
-    private static V1 parseV1(String[] lines, int from) {
-        V1 m = new V1();
-        for (int i = from; i < lines.length; i++) {
-            String line = lines[i];
-            if (line.isBlank() || line.startsWith("#")) continue;
-            String[] t = line.split("\t", -1);
-            switch (t[0]) {
-                case "version":
-                    throw new AssertionError("a second version row: " + line);
-                case "fixture":
-                    arity(t, 5, line);
-                    check(!m.fixtureKinds.containsKey(t[1]), "duplicate fixture row: " + line);
-                    m.fixtureKinds.put(t[1], t[2]);
-                    break;
-                case "file": {
-                    arity(t, 6, line);
-                    V1.FileRow f = new V1.FileRow();
-                    f.fixtureId = t[1];
-                    f.relName = relName(t[2], line);
-                    f.rawLen = nat(t[3], line);
-                    f.rawSha = sha256(t[4], line);
-                    f.gzSha = sha256(t[5], line);
-                    m.files.add(f);
-                    break;
-                }
-                case "expect": {
-                    arity(t, 7, line);
-                    V1.Expect e = new V1.Expect();
-                    e.fixtureId = t[1];
-                    e.engine = vocab(t[2], ENGINES, "engine", line);
-                    e.verdict = vocab(t[3], List.of("accept", "reject"), "verdict", line);
-                    e.opener = vocab(t[4], List.of("direct", "wal"), "opener", line);
-                    e.placeAs = relName(t[5], line);
-                    e.openArg = relName(t[6], line);
-                    // A v1 cell is identified by (fixture, engine, opener, placeAs) — NOT by
-                    // (fixture, engine). The live tree has both a `direct` and a `wal` cell for the
-                    // same engine on `wal-v1-rust-tail`, which is the whole point of the v1
-                    // opener column; a narrower key rejects the real manifest, as it did here.
-                    for (V1.Expect prior : m.expects)
-                        check(!(prior.fixtureId.equals(e.fixtureId) && prior.engine.equals(e.engine)
-                                        && prior.opener.equals(e.opener) && prior.placeAs.equals(e.placeAs)),
-                                "duplicate expect row for " + e.fixtureId + "/" + e.engine + "/"
-                                        + e.opener + ": " + line);
-                    m.expects.add(e);
-                    break;
-                }
-                case "recid":
-                    arity(t, 7, line);
-                    addRecid(m.recids, t[1], recid(t[2], nat(t[3], line), state(t[4], line),
-                            nat(t[5], line), nat(t[6], line)), line);
-                    break;
-                case "recidrange":
-                    arity(t, 8, line);
-                    expandRange(m.recids, t, line);
-                    break;
-                case "edit":
-                    arity(t, 6, line);
-                    // reject-derivation provenance; the referenced files are consumed pre-edited
-                    break;
-                default:
-                    throw new AssertionError("unknown v1 manifest row type: " + line);
-            }
-        }
-        return m;
     }
 
     // ---------------------------------------------------------------- v2 parser
@@ -476,11 +369,7 @@ final class XFixtureManifest {
 
     // ---------------------------------------------------------------- shared scalar forms
 
-    /**
-     * {@code recid}/{@code recidrange} are the two row types whose columns are IDENTICAL in v1 and
-     * v2, so the expansion is shared. Stated here rather than left to be noticed: sharing a helper
-     * between the parsers is safe exactly where the columns are the same, and nowhere else.
-     */
+    /** Expands one {@code recidrange} row into one expectation per recid. */
     private static void expandRange(Map<String, List<FixtureWriter.RecidExpect>> into,
                                     String[] t, String line) {
         long from = nat(t[3], line), to = nat(t[4], line);

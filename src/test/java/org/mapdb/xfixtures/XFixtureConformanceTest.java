@@ -2,66 +2,38 @@ package org.mapdb.xfixtures;
 
 import org.junit.After;
 import org.junit.Test;
-import org.mapdb.DBException;
 import org.mapdb.TmpFiles;
-import org.mapdb.store.Store;
-import org.mapdb.store.StoreDirect;
-import org.mapdb.store.StoreWAL;
 import org.mapdb.store.Wal3Decode;
 
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
-import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.TreeSet;
-import java.util.zip.GZIPInputStream;
 
-import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
 
 /**
  * Cross-port conformance harness: runs every {@code engine == java} cell of the checked-in
- * fixture manifests against this engine.
+ * schema-v2 sample against this engine (Stage C, <b>C7j</b> — schema-v1 retired).
  *
  * <p>The fixtures pin the CURRENT state of an UNSTABLE format so that silent divergence between
  * the store engines is detected. Cross-engine openability today is an implementation fact, not a
- * supported feature; any format change regenerates the fixtures as part of that change (see
- * {@link FixtureWriter} and the sync script in the planning repo).
+ * supported feature; any format change regenerates the fixtures as part of that change.
  *
- * <p><b>Two manifests, one reader (Stage C, C3).</b> {@code /xfixtures/} holds the live schema-v1
- * fixture tree the suite has always run. {@code /xfixtures-v2/} holds a static schema-v2 sample
- * over the wal3 golden bundles. Both go through {@link XFixtureManifest#load}, which dispatches on
- * the {@code version} row alone. They are separate resource roots on purpose: C6 flips the live
- * tree to v2 as a <em>data</em> commit, and that is only safe if this reader already accepts both
- * schemas, proven by both being exercised at once. {@link #manifest_dispatches_on_the_version_row}
- * pins the dispatch itself, because the two schemas' {@code expect} rows have the same arity and
- * different columns.
+ * <p><b>Schema v2 only.</b> {@code /xfixtures-v2/} holds the static schema-v2 sample over the wal3
+ * golden bundles. The dual v1/v2 dispatch and the schema-v1 tree retired at C7j once the corpus
+ * root was green (C6). The frozen corpus runs in {@link XFixtureCorpusTest}.
  *
- * <p><b>Schema-v1 flow.</b> Gunzip every fixture file once into a session temp dir verifying
- * length and SHA-256, then run each cell in a fresh private directory over its own working copy:
- * accept cells get {@code verify()} + the full per-recid reader contract + exact
- * {@code getAllRecids}; reject cells must fail to open with {@link DBException.DataCorruption} —
- * via {@link StoreDirect} for {@code direct} rows, via {@link StoreWAL} on the BASE path for
- * {@code wal} rows (the fixture placed at {@code <base>.wal} hits the N6 no-migration boundary).
- * Either way the working copy must stay byte-identical and nothing beyond {@code .lock} sidecars
- * may appear.
- *
- * <p><b>Schema-v2 flow.</b> A fixture is a whole namespace — several file rows, blobs named
+ * <p>A fixture is a whole namespace — several file rows, blobs named
  * {@code <fixtureId>.<relName>.gz} — and a cell names a {@code mode} ({@code rw} or {@code ro}) as
  * well as a verdict. Post-open state is asserted from the manifest's own {@code post} rows rather
- * than from a blanket rule: a file a post row names must match that disposition, and every other
- * file must be byte-unchanged (the D6 post-cardinality amendment). On top of the cells,
+ * than from a blanket rule. On top of the cells,
  * {@link #sample_v2_framing_matches_golden_decode} compares this engine's decode of every sample
  * segment against {@code GOLDEN-DECODE.tsv}, which pins what the bytes MEAN where the manifest's
  * SHA-256 columns pin only which bytes were read.
@@ -71,7 +43,6 @@ import static org.junit.Assert.fail;
  */
 public class XFixtureConformanceTest {
 
-    private static final String V1_ROOT = "/xfixtures/";
     private static final String V2_ROOT = "/xfixtures-v2/";
 
     private final List<File> dirs = new ArrayList<>();
@@ -88,125 +59,13 @@ public class XFixtureConformanceTest {
     }
 
     // ---------- shared resource plumbing ----------
-    //
-    // The v2 halves live in XFixtureV2Executor, which both roots go through; these are the two
-    // thin aliases the v1 flow and the golden tables still need.
 
     private static byte[] resource(String path) throws IOException {
         return XFixtureV2Executor.resource(path);
     }
 
-    private static byte[] gunzipChecked(String root, String blobName, String relName,
-                                        long rawLen, String rawSha, String gzSha) throws IOException {
-        return XFixtureV2Executor.gunzipChecked(root, blobName, relName, rawLen, rawSha, gzSha);
-    }
-
     private static TreeSet<String> listNames(File dir) {
         return XFixtureV2Executor.listNames(dir);
-    }
-
-    // ---------- schema v1 ----------
-
-    /** Gunzips every v1 fixture file once, verifying gz and raw SHA-256 plus raw length up front. */
-    private static Map<String, File> gunzipAllV1(XFixtureManifest.V1 m, File session) throws IOException {
-        Map<String, File> pristine = new HashMap<>();
-        for (XFixtureManifest.V1.FileRow f : m.files) {
-            byte[] bytes = gunzipChecked(V1_ROOT, f.relName + ".gz", f.relName, f.rawLen, f.rawSha, f.gzSha);
-            File out = new File(session, f.relName);
-            Files.write(out.toPath(), bytes);
-            pristine.put(f.relName, out);
-        }
-        return pristine;
-    }
-
-    private void runV1Cell(XFixtureManifest.V1 m, XFixtureManifest.V1.Expect e, File pristine)
-            throws IOException {
-        String ctx = "v1 cell[" + e.fixtureId + " java " + e.verdict + " " + e.opener + "]";
-        // Schema v1 knows exactly two openers; anything else is a manifest error, not a skip.
-        assertTrue(ctx + ": unsupported opener " + e.opener,
-                "direct".equals(e.opener) || "wal".equals(e.opener));
-
-        File cell = tempDir("xfcell");
-        File work = new File(cell, e.placeAs);
-        Files.copy(pristine.toPath(), work.toPath());
-        byte[] before = Files.readAllBytes(work.toPath());
-        TreeSet<String> namesBefore = listNames(cell);
-
-        // direct rows carry the file path in openArg; java wal rows carry the store BASE path
-        // (the fixture sits at placeAs = <base>.wal, where the N6 no-migration boundary sees it).
-        File openTarget = new File(cell, e.openArg);
-        switch (e.verdict) {
-            case "accept": {
-                // Schema v1 has no java accept-wal rows (the W fixtures are port-format v1).
-                assertEquals(ctx + ": unsupported accept opener", "direct", e.opener);
-                StoreDirect s = new StoreDirect(openTarget);
-                try {
-                    List<FixtureWriter.RecidExpect> expects = m.recids.get(e.fixtureId);
-                    assertTrue(ctx + ": accept fixture has no recid rows", expects != null && !expects.isEmpty());
-                    FixtureWriter.assertReaderContract(s, expects, ctx);
-                } finally {
-                    s.close();
-                }
-                break;
-            }
-            case "reject":
-                // Schema v1 has no mode column; every v1 cell is a writable open.
-                assertRejected(ctx, e.opener, "rw", openTarget);
-                break;
-            default:
-                fail(ctx + ": unknown verdict " + e.verdict);
-        }
-
-        // the working copy must be byte-identical after the cell, whatever the verdict
-        assertArrayEquals(ctx + ": working copy bytes changed", before, Files.readAllBytes(work.toPath()));
-        // .lock sidecars are allowed to appear; anything else new is a failure
-        for (String name : listNames(cell)) {
-            if (namesBefore.contains(name)) continue;
-            assertTrue(ctx + ": unexpected new file " + name, name.endsWith(".lock"));
-        }
-        TmpFiles.delete(cell);
-        dirs.remove(cell);
-    }
-
-    /**
-     * A reject cell must fail with the engine's corruption class. For {@code wal} rows
-     * {@code WalSegmentSet}'s N6 check throws on the bare {@code <base>.wal} file BEFORE any
-     * namespace mutation (only the {@code .lock} sidecar precedes it), so the byte-unchanged and
-     * no-new-files assertions still hold for that arm.
-     */
-    private static void assertRejected(String ctx, String opener, String mode, File openTarget) {
-        try {
-            Store s;
-            if ("direct".equals(opener)) {
-                assertEquals(ctx + ": the direct opener has no read-only mode here", "rw", mode);
-                s = new StoreDirect(openTarget);
-            } else {
-                // The mode is honoured, because `ro` is a different code path: `openReadOnly` runs
-                // recovery without acting on it, so a bundle it accepts and a writable open refuses
-                // (or the reverse) is exactly the divergence a reject cell would exist to pin.
-                s = "ro".equals(mode) ? StoreWAL.openReadOnly(openTarget) : new StoreWAL(openTarget);
-            }
-            s.close();
-            fail(ctx + ": expected DBException.DataCorruption, but the store opened");
-        } catch (DBException.DataCorruption expected) {
-            // the engine's corruption class, per the contract
-        }
-    }
-
-    @Test public void manifest_cells_conform() throws Exception {
-        XFixtureManifest.Loaded loaded = XFixtureManifest.load(V1_ROOT);
-        assertEquals("the live fixture tree is not schema v1 — if C6 flipped it, this test moves "
-                + "to the v2 executor rather than being relaxed", 1, loaded.version);
-        XFixtureManifest.V1 m = loaded.v1;
-        File session = tempDir("xfixtures-session");
-        Map<String, File> pristine = gunzipAllV1(m, session);
-        int ran = 0;
-        for (XFixtureManifest.V1.Expect e : m.expects) {
-            if (!"java".equals(e.engine)) continue;
-            runV1Cell(m, e, pristine.get(m.fileOf(e.fixtureId).relName));
-            ran++;
-        }
-        assertTrue("manifest contains no java expect rows", ran > 0);
     }
 
     // ---------- schema v2 ----------
@@ -378,36 +237,32 @@ public class XFixtureConformanceTest {
                 want.contains("\t1\te3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n"));
     }
 
-    // ---------- the dispatch itself ----------
+    // ---------- the version gate (C7j) ----------
 
     /**
-     * Pins the version dispatch, which is the one thing in this reader that cannot be checked by
-     * running it: v1 and v2 {@code expect} rows are both seven fields, so a reader that keyed on
-     * arity would parse either file without complaint and put {@code mode} where {@code verdict}
-     * belongs. These cases read a column that moved and assert it landed in the right field.
+     * Schema version 1 is retired; schema version 2 is the only accepted form.
+     *
+     * <p>The historical reason the version row is a hard gate, not an arity guess: v1 and v2
+     * {@code expect} rows were both seven fields with different columns. A reader that keyed on
+     * field count would put {@code mode} where {@code verdict} belongs. These cases pin that v2
+     * columns land in the right fields and that v1 (and any other version) is refused by name.
      */
-    @Test public void manifest_dispatches_on_the_version_row() {
-        XFixtureManifest.Loaded v1 = XFixtureManifest.parse(String.join("\n",
-                "version\t1",
-                "fixture\tf\tdirect\tjava\tc",
-                "expect\tf\tjava\treject\tdirect\tf.db\tf.db") + "\n");
-        assertEquals(1, v1.version);
-        assertTrue("v1 parse produced a v2 model", v1.v2 == null);
-        assertEquals("reject", v1.v1.expects.get(0).verdict);
-        assertEquals("f.db", v1.v1.expects.get(0).placeAs);
-
+    @Test public void manifest_accepts_only_schema_v2() {
         XFixtureManifest.Loaded v2 = XFixtureManifest.parse(String.join("\n",
                 "version\t2",
                 "fixture\tf\twal3-namespace\tjava\tc",
                 "expect\tf\tjava\tro\taccept\twal3\tx") + "\n");
         assertEquals(2, v2.version);
-        assertTrue("v2 parse produced a v1 model", v2.v1 == null);
-        // The columns that moved. `ro` in the verdict slot is exactly the misread an arity-keyed
-        // dispatcher makes, and it is caught here rather than by a downstream vocabulary check.
+        assertTrue("v2 parse produced no model", v2.v2 != null);
+        // The columns that moved at the v1→v2 flip. `ro` in the verdict slot is exactly the
+        // misread an arity-keyed dispatcher makes, and it is caught here rather than by a
+        // downstream vocabulary check.
         assertEquals("ro", v2.v2.expects.get(0).mode);
         assertEquals("accept", v2.v2.expects.get(0).verdict);
         assertEquals("wal3", v2.v2.expects.get(0).opener);
 
+        refused("retired schema version 1",
+                "version\t1\nfixture\tf\tdirect\tjava\tc\nexpect\tf\tjava\treject\tdirect\tf.db\tf.db\n");
         refused("an unsupported schema version", "version\t3\n");
         refused("a manifest whose first data line is not a version row",
                 "fixture\tf\tdirect\tjava\tc\n");
@@ -420,12 +275,7 @@ public class XFixtureConformanceTest {
      * while ignoring whatever that row asserted.
      */
     @Test public void unknown_row_types_are_refused() {
-        refused("an unknown v1 row type", "version\t1\nsomething\tf\tx\n");
         refused("an unknown v2 row type", "version\t2\nsomething\tf\tx\n");
-        // A row type from the OTHER schema is unknown too: v1 has no `post`, v2 has no ... nothing
-        // it lacks, so only this direction can be shown, and it is the direction C6 will exercise.
-        refused("a v2 post row inside a v1 manifest",
-                "version\t1\npost\tf\tjava\trw\tx.lock\tunchanged\n");
         refused("a wrong-arity v2 expect row",
                 "version\t2\nfixture\tf\twal3-namespace\tjava\tc\nexpect\tf\tjava\tro\taccept\twal3\n");
         refused("an out-of-vocabulary v2 mode",

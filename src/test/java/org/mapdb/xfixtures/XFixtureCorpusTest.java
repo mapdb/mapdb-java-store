@@ -26,7 +26,7 @@ import static org.junit.Assert.fail;
  * {@code applies}, {@code action}, {@code bytes} and {@code reopen} rows, all four of which this
  * engine EXECUTES. The static {@code /xfixtures-v2/} sample stays {@code v2-core} and is untouched
  * by C6; {@link XFixtureConformanceTest} still owns it, through the same executor. The dual reader
- * (v1 sample + v2 sample + this corpus root) is what keeps the cutover a data commit.
+ * (v2 sample + this corpus root). C7j then retired the schema-v1 tree and dual dispatch.
  *
  * <h2>What makes the copy more than a copy</h2>
  * Three roots hand-copied between four repositories is how the static sample survives today only by
