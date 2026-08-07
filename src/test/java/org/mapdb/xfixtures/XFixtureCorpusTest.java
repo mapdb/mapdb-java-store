@@ -857,6 +857,22 @@ public class XFixtureCorpusTest {
         XFixtureV2Executor.assertFamily("a segment name containing the delimiter", "S2",
                 new DBException.DataCorruption("WAL segment od: dd/x.wal.4: section LSN 1 at "
                         + "offset 2 does not follow 0"));
+        // And a name containing a NEWLINE, which is also a legal Unix filename. Round 2's repair
+        // replaced `[^:]+` with `.+?` and java's `.` does not cross a line terminator without
+        // DOTALL, so it swapped a hidden no-colon constraint for a hidden no-newline one and this
+        // sample is what makes the difference visible. Round 3 found it. The colon case above
+        // varies the colon and nothing else, which is lesson (g): a comparison sees only the
+        // variation its inputs contain, and "opaque" is a claim about ALL characters.
+        XFixtureV2Executor.assertFamily("a segment name containing a newline", "S2",
+                new DBException.DataCorruption("WAL segment od\ndd/x.wal.4: section LSN 1 at "
+                        + "offset 2 does not follow 0"));
+        // The OFFSET is unsigned. An LSN is a signed long on disk and the two LSN fields carry the
+        // sign to prove it; a byte offset into a file does not, so this message is not this
+        // refusal reworded but a message the engine never writes — and a refusal wearing it is
+        // something else, which must not be handed a family.
+        refusedFamily("an S2-shaped message with a negative offset", "S2",
+                new DBException.DataCorruption("WAL segment x.wal.4: section LSN 1 at "
+                        + "offset -2 does not follow 0"));
 
         // C5t's second family, and the pair that makes the family READING falsifiable.
         Throwable magic = new DBException.DataCorruption("not a mapdb StoreDirect file (bad magic)");

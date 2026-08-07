@@ -440,9 +440,21 @@ final class XFixtureV2Executor {
      * fixed and the name is whatever lies between two fixed markers, so the name group is reluctant
      * and the marker that ends it is spelled out in full: only {@code ": section LSN "} can, and
      * {@code matches()} anchors both ends.
+     *
+     * <p><b>{@code [\s\S]+?}, not {@code .+?}</b> — the SAME defect a third time, and round 2's own
+     * repair introduced it. Java's {@code .} does not match a line terminator unless DOTALL is on,
+     * and a Unix filename may contain a newline, so {@code .+?} traded a hidden no-colon constraint
+     * for a hidden no-newline one. The character class round 2 deleted, {@code [^:]+}, matched
+     * newlines fine. Opaque means opaque: the name group must exclude nothing at all, and only the
+     * markers on either side may end it.
+     *
+     * <p>The OFFSET is unsigned and the two LSNs are not, and that asymmetry is the engine's: an LSN
+     * is {@code long} on disk and a CRC-valid section may legitimately carry a negative one, while
+     * an offset is a count of bytes into a file. A message with {@code at offset -2} is not this
+     * refusal reworded — it is not a refusal this engine writes at all.
      */
     static final Pattern S2 = Pattern.compile(
-            "WAL segment .+?: section LSN -?\\d+ at offset \\d+ does not follow -?\\d+");
+            "WAL segment [\\s\\S]+?: section LSN -?\\d+ at offset \\d+ does not follow -?\\d+");
 
     /**
      * Asserts a refusal belongs to the named contract family.
