@@ -256,6 +256,20 @@ final class XFixtureV2Executor {
      *       what recovery left behind is an assertion about the store, not an absence of one.</li>
      * </ul>
      *
+     *   <li>a verdict that DIFFERS from another engine's on the same fixture and mode. <b>The
+     *       staged run found this one too</b>, on the next cell of the same shape once the
+     *       {@code mut-wal3-torn-tail} arm let it get that far — which is lesson (h) at corpus
+     *       scale: fixing the first red is what reveals the second.
+     *       {@code div-wal3-entry-recid0} java rw carries only the universal {@code x.lock}
+     *       post row, and the catalogue says why in as many words: "java: open and close ONLY —
+     *       no logical-state claim, because the reference's behaviour here is undefined
+     *       ({@code recidToOffset} computes {@code recid - 1}) and pinning it would freeze an
+     *       accident." The claim IS the verdict — java opens an image both ports refuse — and it
+     *       is graded, because a java that started refusing would fail the {@code expect} row.
+     *       Demanding more of a {@code div-} cell means demanding that undefined reference
+     *       behaviour be frozen as contract, which is the one thing this corpus must not do.</li>
+     * </ul>
+     *
      * <p><b>{@code created} and {@code unchanged} are deliberately NOT in that last arm.</b> Every
      * wal3 cell carries the universal {@code x.lock created} row, so admitting {@code created}
      * would make the guard vacuous — it would admit the very cell the doctored proof above uses,
@@ -267,14 +281,22 @@ final class XFixtureV2Executor {
         for (XFixtureManifest.V2.Post p : m.postsOf(e.fixtureId, ENGINE, e.mode))
             mutationClaimed |= "modified".equals(p.verb) || "truncated".equals(p.verb)
                     || "deleted".equals(p.verb);
+        // A DIVERGENCE: some other engine reaches a different verdict on this fixture and mode.
+        // Read from the `expect` rows already in the manifest — the divergence needs no column of
+        // its own, because it IS the disagreement between two rows that are both already there.
+        boolean divergent = false;
+        for (XFixtureManifest.V2.Expect o : m.expects)
+            divergent |= o.fixtureId.equals(e.fixtureId) && o.mode.equals(e.mode)
+                    && !o.engine.equals(ENGINE) && !o.verdict.equals(e.verdict);
         boolean any = hasRecids
                 || !m.actionsOf(e.fixtureId, ENGINE, e.mode).isEmpty()
                 || !m.reopensOf(e.fixtureId, ENGINE, e.mode).isEmpty()
                 || "ro".equals(e.mode)
-                || mutationClaimed;
+                || mutationClaimed
+                || divergent;
         assertTrue(ctx + ": an accept cell with no recid rows, no action, no reopen, no post row "
-                + "claiming a change and a writable handle asserts nothing about the store it "
-                + "opened, which is not a check", any);
+                + "claiming a change, no engine disagreeing about the verdict and a writable "
+                + "handle asserts nothing about the store it opened, which is not a check", any);
     }
 
     /**
