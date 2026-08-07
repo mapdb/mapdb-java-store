@@ -284,6 +284,22 @@ final class XFixtureV2Executor {
         // A DIVERGENCE: some other engine reaches a different verdict on this fixture and mode.
         // Read from the `expect` rows already in the manifest — the divergence needs no column of
         // its own, because it IS the disagreement between two rows that are both already there.
+        //
+        // THIS ARM IS JAVA'S ALONE, and the asymmetry is deliberate rather than an oversight the
+        // ports have yet to fix. rust and zig carried it for one day; round 4 measured it and
+        // found it unreachable in both. Every divergent (fixture, mode) group in the corpus —
+        // `div-wal3-lsn-exhausted`, `div-wal3-entry-recid0`, `div-wal3-packlong-overlong` — is
+        // java ACCEPT against ports REJECT, and this guard runs on the accept arm only, so a
+        // port's copy was `false` on every input it has. It was deleted there under the rule this
+        // slice keeps applying: a check no input can reach goes. Each port states the same thing
+        // at the site where its arm used to be, so the asymmetry is discoverable from either side.
+        //
+        // Two java cells actually depend on it: `div-wal3-entry-recid0 rw` and
+        // `div-wal3-packlong-overlong rw`. Round 4's qualification is worth keeping — the staged
+        // run's red-without/green-with shows the arm is NECESSARY, not that it is SOUND, and what
+        // it proves is narrower than the other five arms: that the cell's VERDICT discriminates,
+        // not that the cell observed anything. No alternative was available, since a `reopen` row
+        // on an accept cell can only express a refusal.
         boolean divergent = false;
         for (XFixtureManifest.V2.Expect o : m.expects)
             divergent |= o.fixtureId.equals(e.fixtureId) && o.mode.equals(e.mode)
