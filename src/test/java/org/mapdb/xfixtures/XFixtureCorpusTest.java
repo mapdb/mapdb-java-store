@@ -660,6 +660,34 @@ public class XFixtureCorpusTest {
         // cell must assert something" and "ro is exempt" would be indistinguishable.
         new XFixtureV2Executor(m, session).runCell(
                 javaCell(m, "wal3-java-cleaned", "ro"), tempDir("xfcorpus-barecell-ro"));
+
+        // The MUTATION-CLAIM arm, which no cell in this root exercises: the staged corpus's
+        // torn-tail fixtures carry a `post ... truncated` row and nothing else, and until the
+        // staged run they were graded by a guard that refused them. Same stripped manifest, with
+        // the universal lock row relabelled `modified` — the guard must let the cell through, and
+        // the red must then come from the POST check, which refuses `modified` on a file that was
+        // never an input. Asserting WHICH red fires is the whole test: delete the arm and the
+        // guard reds first with "asserts nothing", which is what this used to do.
+        XFixtureManifest.V2 mm = doctored(t -> {
+            StringBuilder out = new StringBuilder();
+            for (String line : t.split("\n", -1)) {
+                if (line.startsWith("recid\twal3-java-cleaned\t")) continue;
+                out.append(line.startsWith("post\twal3-java-cleaned\tjava\trw\tx.lock\tcreated:")
+                        ? line.replace("\tcreated:", "\tmodified:") : line).append('\n');
+            }
+            return out.substring(0, out.length() - 1);
+        });
+        AssertionError post = null;
+        try {
+            new XFixtureV2Executor(mm, session).runCell(
+                    javaCell(mm, "wal3-java-cleaned", "rw"), tempDir("xfcorpus-mutclaim"));
+        } catch (AssertionError err) {
+            post = err;
+        }
+        assertTrue("the cell with a mutation claim passed on nothing", post != null);
+        assertTrue("the mutation-claim arm is not live — the oracle guard refused the cell "
+                + "before its post rows were read: " + post.getMessage(),
+                post.getMessage().contains("names a file that was not an input"));
     }
 
     /**

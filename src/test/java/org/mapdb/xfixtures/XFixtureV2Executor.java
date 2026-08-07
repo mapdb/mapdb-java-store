@@ -248,15 +248,33 @@ final class XFixtureV2Executor {
      *       {@code div-wal3-lsn-exhausted} java ro it is the whole point: java accepts an image
      *       both ports refuse, and refuses the write. The first draft called that cell one that
      *       "carries neither", which skipped the probe it does carry.</li>
+     *   <li>a {@code post} row that says the open CHANGED the tree — {@code modified},
+     *       {@code truncated} or {@code deleted}. <b>The staged run found this one</b>, and no
+     *       preflight root could have: {@code mut-wal3-torn-tail} java rw carries no recid row, no
+     *       action and no reopen, and what it asserts is a post state — the tail truncated to the
+     *       last valid section end, which is §6.2a's own obligation. A byte-exact statement of
+     *       what recovery left behind is an assertion about the store, not an absence of one.</li>
      * </ul>
+     *
+     * <p><b>{@code created} and {@code unchanged} are deliberately NOT in that last arm.</b> Every
+     * wal3 cell carries the universal {@code x.lock created} row, so admitting {@code created}
+     * would make the guard vacuous — it would admit the very cell the doctored proof above uses,
+     * which is how this guard is shown to bite at all. {@code unchanged} is the two-sided rule's
+     * default statement and asserts that the open did nothing.
      */
     private void requireSomeOracle(String ctx, XFixtureManifest.V2.Expect e, boolean hasRecids) {
+        boolean mutationClaimed = false;
+        for (XFixtureManifest.V2.Post p : m.postsOf(e.fixtureId, ENGINE, e.mode))
+            mutationClaimed |= "modified".equals(p.verb) || "truncated".equals(p.verb)
+                    || "deleted".equals(p.verb);
         boolean any = hasRecids
                 || !m.actionsOf(e.fixtureId, ENGINE, e.mode).isEmpty()
                 || !m.reopensOf(e.fixtureId, ENGINE, e.mode).isEmpty()
-                || "ro".equals(e.mode);
-        assertTrue(ctx + ": an accept cell with no recid rows, no action, no reopen and a writable "
-                + "handle asserts nothing about the store it opened, which is not a check", any);
+                || "ro".equals(e.mode)
+                || mutationClaimed;
+        assertTrue(ctx + ": an accept cell with no recid rows, no action, no reopen, no post row "
+                + "claiming a change and a writable handle asserts nothing about the store it "
+                + "opened, which is not a check", any);
     }
 
     /**
