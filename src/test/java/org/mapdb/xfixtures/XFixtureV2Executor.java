@@ -181,9 +181,12 @@ final class XFixtureV2Executor {
 
         String opener = dispatch == Dispatch.ALWAYS_WAL3 ? "wal3" : e.opener;
         File target = new File(cell, e.openArg);
+        // The cell's OWN refusal, on a reject cell. Null on an accept cell, where there is none
+        // and the reopen row (Q8's) is graded alone.
+        Throwable firstRefusal = null;
         switch (e.verdict) {
             case "accept" -> runAccept(ctx, e, opener, target, owed);
-            case "reject" -> assertRejected(ctx, opener, e.mode, target);
+            case "reject" -> firstRefusal = assertRejected(ctx, opener, e.mode, target);
             default -> fail(ctx + ": unknown verdict " + e.verdict);
         }
 
@@ -193,7 +196,7 @@ final class XFixtureV2Executor {
         Map<String, byte[]> after = capture(cell);
         assertBytesRows(ctx, e, after, owed);
         assertPostState(ctx, e, after, inputs, owed);
-        assertReopen(ctx, e, opener, target, owed);
+        assertReopen(ctx, e, opener, target, owed, firstRefusal);
         owed.requireAllConsumed();
     }
 
@@ -311,12 +314,21 @@ final class XFixtureV2Executor {
         readOnlyHandlesProbed.add(e.fixtureId + "/" + e.mode);
     }
 
-    /** A reject cell must fail with the engine's corruption class, through the named opener. */
-    private static void assertRejected(String ctx, String opener, String mode, File target) {
+    /**
+     * A reject cell must fail with the engine's corruption class, through the named opener.
+     *
+     * <p>Returns the refusal, which the caller hands to {@link #assertReopen} — that is where the
+     * cell's {@code reopen} row grades its FAMILY. Held rather than graded here because §3.11's
+     * mutant (the direct cell dispatched to the wal3 opener) trips both the family check and the
+     * post-row rule it was written to prove, and lesson (h) says such an input measures whichever
+     * fires first.
+     */
+    private static Throwable assertRejected(String ctx, String opener, String mode, File target) {
         Throwable t = refusalOf(ctx, opener, mode, target);
         assertTrue(ctx + ": expected DBException.DataCorruption, but the store opened", t != null);
         assertTrue(ctx + ": refused with " + t.getClass().getName() + ": " + t.getMessage(),
                 t instanceof DBException.DataCorruption);
+        return t;
     }
 
     /** Opens and returns the refusal, or {@code null} if the store opened (and was closed). */
@@ -367,9 +379,20 @@ final class XFixtureV2Executor {
     // ------------------------------------------------------------------ reopen
 
     private void assertReopen(String ctx, XFixtureManifest.V2.Expect e, String opener,
-                              File target, Consumption owed) {
+                              File target, Consumption owed, Throwable first) {
         for (XFixtureManifest.V2.Reopen r : m.reopensOf(e.fixtureId, ENGINE, e.mode)) {
             String where = ctx + " reopen[" + r.family + "]";
+            // THE CELL'S OWN REFUSAL FIRST, where there was one. C5t's first draft graded the
+            // family on the reopen alone and threw the first refusal away; codex round 1 finding 2
+            // is why it does not. The reopen is a WRITABLE open whatever the cell's mode was, so
+            // every mode=ro row was graded on a retry in the OTHER mode — a store that refuses
+            // read-only for one reason and writable for another passed, and so did a stateful one
+            // that got it wrong once and right on retry. The arm the corpus names is the first
+            // open; the second is the stability check.
+            //
+            // On an ACCEPT cell — Q8 — `first` is null and the reopen is the only grading there
+            // is, because the cell's own open succeeded.
+            if (first != null) assertFamily(ctx + " family[" + r.family + "]", r.family, first);
             // A reopen is a WRITABLE open whatever the cell's own mode was: the claim is that the
             // store is permanently unopenable, and a read-only probe would be a weaker one.
             // Through the cell's OWN opener, not a hard-coded `wal3`. Until C5t only Q8 had a

@@ -591,6 +591,40 @@ public class XFixtureCorpusTest {
     }
 
     /**
+     * On a REJECT cell the family is graded on the cell's OWN refusal, before the reopen.
+     *
+     * <p>codex round 1 finding 2: C5t's first draft graded the family only on the reopen, which is a
+     * WRITABLE open whatever the cell's mode was. Every {@code mode=ro} row was therefore graded by
+     * a retry in the other mode, and a store that refuses read-only for one reason and writable for
+     * another passed.
+     *
+     * <p><b>The corpus alone cannot show the fix.</b> Both reference openers refuse the same way
+     * twice, so deleting the first grading leaves the reopen's — same family, same predicate, gate
+     * green. What separates them is WHERE the red comes from: this doctored family reds at
+     * {@code family[...]} if the cell's own refusal was graded and at {@code reopen[...]} if only
+     * the second open was. Asserting the prefix is what makes the deletion visible.
+     */
+    @Test public void the_reject_arms_own_refusal_is_graded() throws Exception {
+        XFixtureManifest.V2 m = doctored(t -> t.replace(
+                "reopen\treject-wal3-segment-at-direct\tjava\trw\tdirect-magic",
+                "reopen\treject-wal3-segment-at-direct\tjava\trw\tR4-floor"));
+        File session = tempDir("xfcorpus-first");
+        XFixtureV2Executor.gunzipAll(m, ROOT, session);
+        AssertionError caught = null;
+        try {
+            new XFixtureV2Executor(m, session).runCell(
+                    javaCell(m, "reject-wal3-segment-at-direct", "rw"), tempDir("xfcorpus-fcell"));
+        } catch (AssertionError err) {
+            caught = err;
+        }
+        assertTrue("the reject arm's own refusal was graded by nothing", caught != null);
+        assertTrue("it failed for another reason: " + caught.getMessage(),
+                caught.getMessage().contains("has no predicate in this engine"));
+        assertTrue("the family was graded on the REOPEN, not on the cell's own refusal: "
+                + caught.getMessage(), caught.getMessage().contains("family[R4-floor]"));
+    }
+
+    /**
      * An accept cell that asserts nothing must be refused — the C3j guard, restored.
      *
      * <p>The first draft of this slice deleted it for the sealed root and called the distribution
