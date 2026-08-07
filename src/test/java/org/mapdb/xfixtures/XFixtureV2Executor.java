@@ -193,7 +193,7 @@ final class XFixtureV2Executor {
         Map<String, byte[]> after = capture(cell);
         assertBytesRows(ctx, e, after, owed);
         assertPostState(ctx, e, after, inputs, owed);
-        assertReopen(ctx, e, target, owed);
+        assertReopen(ctx, e, opener, target, owed);
         owed.requireAllConsumed();
     }
 
@@ -366,13 +366,17 @@ final class XFixtureV2Executor {
 
     // ------------------------------------------------------------------ reopen
 
-    private void assertReopen(String ctx, XFixtureManifest.V2.Expect e, File target,
-                              Consumption owed) {
+    private void assertReopen(String ctx, XFixtureManifest.V2.Expect e, String opener,
+                              File target, Consumption owed) {
         for (XFixtureManifest.V2.Reopen r : m.reopensOf(e.fixtureId, ENGINE, e.mode)) {
             String where = ctx + " reopen[" + r.family + "]";
             // A reopen is a WRITABLE open whatever the cell's own mode was: the claim is that the
             // store is permanently unopenable, and a read-only probe would be a weaker one.
-            Throwable t = refusalOf(where, "wal3", "rw", target);
+            // Through the cell's OWN opener, not a hard-coded `wal3`. Until C5t only Q8 had a
+            // reopen row and Q8 is a wal3 cell, so the constant was right by accident;
+            // `reject-wal3-segment-at-direct` carries one now, and sending it to the WAL opener
+            // would grade a `direct-magic` family against a refusal StoreDirect never made.
+            Throwable t = refusalOf(where, opener, "rw", target);
             assertTrue(where + ": the store opened again", t != null);
             assertFamily(where, r.family, t);
             owed.consume("reopen " + r.family, r);
@@ -407,6 +411,22 @@ final class XFixtureV2Executor {
      * its immediate neighbour S9, which the corpus itself never varies.
      */
     static void assertFamily(String where, String family, Throwable t) {
+        if ("direct-magic".equals(family)) {
+            // `StoreDirect.initOpen`'s magic check, matched WHOLE and named exactly.
+            //
+            // The draft of this arm accepted the length refusal beside it, reasoning that a WAL
+            // segment might be shorter than the header page. MEASURED instead: the published
+            // segment is 1,200,509 bytes, so it clears `PAGE_SIZE` by three orders of magnitude
+            // and reaches the magic word — in all three engines. A disjunction with an
+            // unreachable half is a predicate that cannot say what it refuses, which is the whole
+            // objection to grading a reject cell by "it threw something".
+            assertTrue(where + ": direct-magic is a corruption verdict, got "
+                            + t.getClass().getName() + ": " + t.getMessage(),
+                    t instanceof DBException.DataCorruption);
+            assertEquals(where + ": not StoreDirect's bad-magic refusal",
+                    "not a mapdb StoreDirect file (bad magic)", t.getMessage());
+            return;
+        }
         if ("S2".equals(family)) {
             assertTrue(where + ": S2 is a corruption verdict, got " + t.getClass().getName()
                     + ": " + t.getMessage(), t instanceof DBException.DataCorruption);

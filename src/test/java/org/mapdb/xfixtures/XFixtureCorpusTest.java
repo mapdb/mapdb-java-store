@@ -85,7 +85,7 @@ public class XFixtureCorpusTest {
      * <p>Regenerate with {@code python3 todo/store-cross/freeze_v2.py --dist-seals --preflight}.
      */
     static final String DIST_SEAL =
-            "8888492b074a202328a5ccf17e1024e7067a0e045030e804ea50234f3d8cd2c7";
+            "3c0442fb100cdcbbafbccb753420950a04c3ee28a9efbe51f00a8bffa7102415";
 
     private final List<File> dirs = new ArrayList<>();
 
@@ -201,7 +201,10 @@ public class XFixtureCorpusTest {
         assertEquals("the corpus carries no `action` row for java, so this engine's action "
                 + "executor has no input at all", 1, actions);
         assertEquals("the corpus carries no `bytes` row for java", 1, bytes);
-        assertEquals("the corpus carries no `reopen` row for java", 1, reopens);
+        // TWO since C5t: Q8's `S2` row after the action, plus the `direct-magic` row plan §3.12
+        // derives for `reject-wal3-segment-at-direct` — the first reopen row this engine runs on a
+        // REJECT cell, where it grades the refusal's family and that the refusal is STABLE.
+        assertEquals("the corpus carries no `reopen` row for java", 2, reopens);
     }
 
     // -------------------------------------------------------------- the §3.11 mutant
@@ -748,10 +751,17 @@ public class XFixtureCorpusTest {
     /**
      * The {@code reopen} family predicate must DISCRIMINATE, which the corpus alone cannot show.
      *
-     * <p>Exactly one {@code reopen} row exists and its family is {@code S2}, so a predicate that
-     * accepted any corruption at all would pass every cell — lesson (g), a comparison can only see
-     * the variation its inputs contain. S9 is the immediate neighbour: the very next branch of the
-     * same scan, the same exception class, a different rule. It must not match.
+     * <p>A predicate that accepted any corruption at all would pass every cell — lesson (g), a
+     * comparison can only see the variation its inputs contain. S9 is the immediate neighbour of
+     * S2: the very next branch of the same scan, the same exception class, a different rule. It
+     * must not match.
+     *
+     * <p><b>C5t added the second family and with it the pairing</b> (plan §3.12). Until then this
+     * engine had exactly one {@code reopen} row, so "the family is read from the row" and "every
+     * family means DataCorruption" were indistinguishable here. {@code direct-magic} is now the
+     * other one, and the four cases at the end take both families against both refusals: the
+     * corpus varies in neither direction, so a predicate that swapped them would pass every cell
+     * with only these to notice.
      */
     @Test public void the_reopen_family_predicate_discriminates() {
         XFixtureV2Executor.assertFamily("S2 control", "S2", new DBException.DataCorruption(
@@ -778,6 +788,21 @@ public class XFixtureCorpusTest {
         refusedFamily("the S2 wording embedded in an unrelated message", "S2",
                 new DBException.DataCorruption("prefix: WAL segment x: section LSN 1 at offset 2 "
                         + "does not follow 0; suffix"));
+
+        // C5t's second family, and the pair that makes the family READING falsifiable.
+        Throwable magic = new DBException.DataCorruption("not a mapdb StoreDirect file (bad magic)");
+        Throwable s2 = new DBException.DataCorruption("WAL segment x.wal.4: section LSN 1 at "
+                + "offset 2 does not follow 0");
+        XFixtureV2Executor.assertFamily("direct-magic control", "direct-magic", magic);
+        refusedFamily("an S2 corruption verdict presented as direct-magic", "direct-magic", s2);
+        refusedFamily("StoreDirect's bad magic presented as S2", "S2", magic);
+        // The neighbour INSIDE StoreDirect.initOpen: the length check one line above the magic
+        // one. `reject-wal3-segment-at-direct` is 1,200,509 bytes so it never trips that branch,
+        // and a predicate that accepted it would be saying "the direct opener refused somehow".
+        refusedFamily("the direct opener's OTHER structural refusal", "direct-magic",
+                new DBException.DataCorruption("store file smaller than the header page"));
+        refusedFamily("an operational failure wearing the magic words", "direct-magic",
+                new DBException("not a mapdb StoreDirect file (bad magic)"));
     }
 
     private static void refusedFamily(String what, String family, Throwable t) {
