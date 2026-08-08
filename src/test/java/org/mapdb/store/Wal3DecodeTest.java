@@ -239,9 +239,40 @@ public class Wal3DecodeTest {
 
         refused("an unknown entry tag",
                 () -> Wal3Decode.entries(only(segment(1, 1, 'S', simple(99, 1))), "synthetic"));
-        refused("a T_APPEND entry, which the C3 body dump has no columns for",
+        // Truncated T_APPEND (tag+recid only) fails mid-delta, not as "unknown".
+        refused("a truncated T_APPEND entry",
                 () -> Wal3Decode.entries(only(segment(1, 1, 'S', simple(StoreWAL.T_APPEND, 1))),
                         "synthetic"));
+        // delta must be in [1, lsn-1]; at section LSN 1 no legal delta exists.
+        DataOutput2 badDelta = new DataOutput2(16);
+        badDelta.writeByte(StoreWAL.T_APPEND);
+        badDelta.packLong(1);
+        badDelta.packLong(1); // delta=1 with lsn=1 → outside [1, 0]
+        badDelta.packLong(0);
+        byte[] badDeltaBody = java.util.Arrays.copyOf(badDelta.buf, badDelta.pos);
+        refused("a T_APPEND with delta outside [1, lsn-1]",
+                () -> Wal3Decode.entries(only(segment(1, 1, 'S', badDeltaBody)), "synthetic"));
+    }
+
+    /** Well-formed T_APPEND decodes delta, baseLsn, len and payload (C9a / O1). */
+    @Test public void append_entries_decode_four_fields() {
+        DataOutput2 o = new DataOutput2(32);
+        o.writeByte(StoreWAL.T_APPEND);
+        o.packLong(7);
+        o.packLong(1); // delta
+        o.packLong(3); // len
+        o.write(new byte[]{10, 20, 30});
+        byte[] body = java.util.Arrays.copyOf(o.buf, o.pos);
+        // section LSN 5 → baseLsn = 5 - 1 = 4
+        List<Wal3Decode.Entry> es = Wal3Decode.entries(only(segment(1, 5, 'S', body)), "synthetic");
+        assertEquals(1, es.size());
+        Wal3Decode.Entry e = es.get(0);
+        assertEquals("APPEND", e.kind());
+        assertEquals(7, e.recid);
+        assertEquals(1, e.delta);
+        assertEquals(4, e.baseLsn);
+        assertEquals(3, e.appendLen);
+        assertArrayEquals(new byte[]{10, 20, 30}, e.content);
     }
 
     /** {@code 'C'} decodes exactly like {@code 'S'}: {@code StoreWAL} gives it no special handling. */

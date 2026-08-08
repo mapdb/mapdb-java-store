@@ -71,6 +71,13 @@ public final class Wal3BodyDump {
             "#",
             "#   sec  <bundle> <relName> <index> <tag> <entryCount>",
             "#   ent  <bundle> <relName> <index> <ord> <kind> <recid> <cap> <lenPlus> <contentSha256>",
+            "#       Non-APPEND rows: 9 fields after the `ent` token (kind-dependent columns).",
+            "#   ent  <bundle> <relName> <index> <ord> APPEND <recid> <delta> <baseLsn> <len> <contentSha256>",
+            "#       APPEND-only: 10 fields after `ent`. Parsers BRANCH ON KIND.",
+            "#       delta = wire packLong(sectionLsn - baseLsn); baseLsn = section.lsn - delta;",
+            "#       len = wire append length (NOT RECORD's lenPlus); contentSha256 hashes the",
+            "#       len payload bytes (empty-string sha when len==0). APPEND never reuses the",
+            "#       cap/lenPlus column positions.",
             "#   mark <bundle> <relName> <index> <cleanedThroughSeq> <logStartLsn>",
             "#",
             "# GOLDEN-DECODE.tsv pins FRAMING and deliberately stops there: walfmt.py is a",
@@ -142,10 +149,25 @@ public final class Wal3BodyDump {
                 for (int i = 0; i < entries.size(); i++) {
                     Wal3Decode.Entry e = entries.get(i);
                     seenRecids.add(e.recid);
-                    row(sb, "ent", f.fixtureId, f.relName, s.index, i, e.kind(), e.recid,
-                            e.cap < 0 ? "-" : e.cap,
-                            e.lenPlus < 0 ? "-" : e.lenPlus,
-                            contentSha(e, where + " section " + s.index + " entry " + i));
+                    String at = where + " section " + s.index + " entry " + i;
+                    if (e.isAppend()) {
+                        // O1 APPEND row: branch on kind; never reuse cap/lenPlus positions.
+                        check(e.baseLsn == s.lsn - e.delta,
+                                at + ": baseLsn " + e.baseLsn + " != section.lsn " + s.lsn
+                                        + " - delta " + e.delta);
+                        check(e.delta >= 1 && e.delta <= s.lsn - 1,
+                                at + ": delta " + e.delta + " outside [1, " + (s.lsn - 1) + "]");
+                        check(e.content != null && e.content.length == e.appendLen,
+                                at + ": append content length " + (e.content == null ? -1
+                                        : e.content.length) + " != len " + e.appendLen);
+                        row(sb, "ent", f.fixtureId, f.relName, s.index, i, e.kind(), e.recid,
+                                e.delta, e.baseLsn, e.appendLen, appendContentSha(e, at));
+                    } else {
+                        row(sb, "ent", f.fixtureId, f.relName, s.index, i, e.kind(), e.recid,
+                                e.cap < 0 ? "-" : e.cap,
+                                e.lenPlus < 0 ? "-" : e.lenPlus,
+                                contentSha(e, at));
+                    }
                 }
             }
         }
@@ -180,6 +202,21 @@ public final class Wal3BodyDump {
                             + c.length + ") — this entry stream was not framed the way the writer "
                             + "wrote it");
         }
+        return FixtureWriter.sha256Hex(c);
+    }
+
+    /**
+     * APPEND content column: sha of the wire payload of length {@code appendLen}.
+     * Empty payload uses the empty-string sha (not {@code -}, which is RECORD-null only).
+     * Payload-language invertibility is checked only when the bytes form a full
+     * {@code payload(id, len)} image — an append fragment alone usually does not.
+     */
+    private static String appendContentSha(Wal3Decode.Entry e, String where) {
+        check(e.isAppend(), where + ": appendContentSha on non-APPEND");
+        byte[] c = e.content;
+        check(c != null && c.length == e.appendLen,
+                where + ": append content is " + (c == null ? -1 : c.length)
+                        + " bytes but len says " + e.appendLen);
         return FixtureWriter.sha256Hex(c);
     }
 

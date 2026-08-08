@@ -130,6 +130,23 @@ public final class Wal3GoldenWriter {
             s.commit();
             s.update(nul, null, RAW);
             s.commit();
+            // commits 9 and 10 (tail only): equal-base T_APPEND. Put 16 bytes so
+            // capacity is 32 and 12 free remain; append the next 8 bytes of the
+            // same payload language so the final live record is still
+            // payload(base+5, 24). Separate commits so the classifier emits a
+            // T_RECORD section then a T_APPEND citing that section's LSN —
+            // same-tx put+append would merge into one T_RECORD and never pin
+            // the delta form. C9a / L4b: sample must carry at least one accepted
+            // append so GOLDEN-BODY can pin the four O1 columns.
+            if (!checkpoint) {
+                long app = s.put(payload(base + 5, 16), RAW);
+                s.commit();
+                byte[] full = payload(base + 5, 24);
+                byte[] more = Arrays.copyOfRange(full, 16, 24);
+                long grew = s.append(app, more, 0, more.length);
+                check(grew == 24, "equal-base append must grow to 24, got " + grew);
+                s.commit();
+            }
             if (checkpoint) s.checkpoint();
         } finally {
             s.close();

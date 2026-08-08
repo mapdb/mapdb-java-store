@@ -84,7 +84,27 @@ public final class Wal3Decode {
          * ({@code StoreWAL.applySection}), and a decoder that reports a length collapses the two.
          */
         public long lenPlus = -1;
-        /** {@code T_RECORD} with {@code lenPlus > 0} only, else null. Never confuse with empty. */
+        /**
+         * {@code T_APPEND} only: the wire {@code packLong(sectionLsn - baseLsn)} after recid.
+         * Else -1. Absolute base is {@link #baseLsn}.
+         */
+        public long delta = -1;
+        /**
+         * {@code T_APPEND} only: absolute {@code section.lsn - delta}, as
+         * {@code StoreWAL.decodeBaseLsn} computes it. Else -1.
+         */
+        public long baseLsn = -1;
+        /**
+         * {@code T_APPEND} only: the wire append length ({@code packLong} after delta).
+         * Not RECORD's {@code lenPlus}. Else -1.
+         */
+        public long appendLen = -1;
+        /**
+         * {@code T_RECORD} with {@code lenPlus > 0}, or {@code T_APPEND} with any length
+         * (including zero-length, which is an empty array). Else null. Never confuse
+         * RECORD null content ({@code lenPlus == 0}, {@code content == null}) with a
+         * zero-length APPEND ({@code appendLen == 0}, {@code content.length == 0}).
+         */
         public byte[] content;
 
         /**
@@ -106,6 +126,7 @@ public final class Wal3Decode {
         }
 
         public boolean isRecord() { return tag == StoreWAL.T_RECORD; }
+        public boolean isAppend() { return tag == StoreWAL.T_APPEND; }
     }
 
     public static final class Segment {
@@ -235,12 +256,22 @@ public final class Wal3Decode {
                         e.content = in.bytes((int) len);
                     }
                     break;
-                case StoreWAL.T_APPEND:
-                    // Reachable format, unreachable corpus: no bundle C3 grades carries one, so
-                    // there is nothing to check a decode of it against. Refusing names the gap;
-                    // decoding it into columns no pinned file has would only look like coverage.
-                    throw new AssertionError(in.at() + ": T_APPEND entry — the C3 body dump has no "
-                            + "columns for it and no fixture exercises it; extend both together");
+                case StoreWAL.T_APPEND: {
+                    // Wire: tag | packLong(recid) | packLong(delta) | packLong(len) | bytes
+                    // (StoreWAL.java:1878-1895). Absolute baseLsn = section.lsn - delta with
+                    // 1 <= delta <= lsn - 1 (decodeBaseLsn at :1231-1243). C9a / O1.
+                    e.delta = in.packed();
+                    req(e.delta >= 1 && e.delta <= s.lsn - 1,
+                            in.at() + ": append delta " + e.delta + " is outside [1, "
+                                    + (s.lsn - 1) + "] for section LSN " + s.lsn);
+                    e.baseLsn = s.lsn - e.delta;
+                    e.appendLen = in.packed();
+                    req(e.appendLen >= 0 && e.appendLen <= s.body.length - in.pos,
+                            in.at() + ": append length " + e.appendLen
+                                    + " does not fit the section body");
+                    e.content = in.bytes((int) e.appendLen);
+                    break;
+                }
                 default:
                     throw new AssertionError(in.at() + ": unknown entry tag " + e.tag);
             }

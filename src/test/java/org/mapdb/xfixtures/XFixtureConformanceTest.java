@@ -280,6 +280,9 @@ public class XFixtureConformanceTest {
                 want.contains("\tRECORD\t12\t0\t0\t-\n"));
         assertTrue(Wal3BodyDump.FILE_NAME + " pins no zero-length record",
                 want.contains("\t1\te3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n"));
+        // C9a / O1: at least one APPEND ent row so the four-field body oracle is not vacuous.
+        assertTrue(Wal3BodyDump.FILE_NAME + " pins no APPEND entry",
+                want.contains("\tAPPEND\t"));
     }
 
     // ---------- the version gate (C7j) ----------
