@@ -576,9 +576,11 @@ public class XFixtureCorpusTest {
      * fails as S2 either way, so only a graded family can tell the two manifests apart.
      */
     @Test public void the_reopen_rows_family_is_graded() throws Exception {
+        // H99 is outside the catalogue vocabulary — every real family now has a
+        // predicate (C8f f0), so the no-predicate red needs a token none of them is.
         XFixtureManifest.V2 m = doctored(t -> t.replace(
                 "reopen\tdiv-wal3-lsn-exhausted\tjava\trw\tS2",
-                "reopen\tdiv-wal3-lsn-exhausted\tjava\trw\tR4-floor"));
+                "reopen\tdiv-wal3-lsn-exhausted\tjava\trw\tH99"));
         File session = tempDir("xfcorpus-fam");
         XFixtureV2Executor.gunzipAll(m, ROOT, session);
         AssertionError caught = null;
@@ -610,7 +612,7 @@ public class XFixtureCorpusTest {
     @Test public void the_reject_arms_own_refusal_is_graded() throws Exception {
         XFixtureManifest.V2 m = doctored(t -> t.replace(
                 "reopen\treject-wal3-segment-at-direct\tjava\trw\tdirect-magic",
-                "reopen\treject-wal3-segment-at-direct\tjava\trw\tR4-floor"));
+                "reopen\treject-wal3-segment-at-direct\tjava\trw\tH99"));
         File session = tempDir("xfcorpus-first");
         XFixtureV2Executor.gunzipAll(m, ROOT, session);
         AssertionError caught = null;
@@ -624,7 +626,7 @@ public class XFixtureCorpusTest {
         assertTrue("it failed for another reason: " + caught.getMessage(),
                 caught.getMessage().contains("has no predicate in this engine"));
         assertTrue("the family was graded on the REOPEN, not on the cell's own refusal: "
-                + caught.getMessage(), caught.getMessage().contains("family[R4-floor]"));
+                + caught.getMessage(), caught.getMessage().contains("family[H99]"));
     }
 
     /**
@@ -846,7 +848,9 @@ public class XFixtureCorpusTest {
         refusedFamily("an operational failure wearing the right words", "S2",
                 new DBException("WAL segment x.wal.4: section LSN 1 at offset 2 "
                         + "does not follow 0"));
-        refusedFamily("a family this engine has no predicate for", "R4-floor",
+        // Unimplemented name — once C8f landed every catalogue family this engine reaches, the
+        // no-predicate red needs a token outside the vocabulary.
+        refusedFamily("a family this engine has no predicate for", "H99",
                 new DBException.DataCorruption("anything at all"));
         // The pattern matches WHOLE. The first draft used find() on an unanchored fragment while
         // its comment claimed anchoring, and codex demonstrated the gap with exactly this shape.
@@ -891,6 +895,86 @@ public class XFixtureCorpusTest {
                 new DBException.DataCorruption("store file smaller than the header page"));
         refusedFamily("an operational failure wearing the magic words", "direct-magic",
                 new DBException("not a mapdb StoreDirect file (bad magic)"));
+
+        // ---- C8f f0: transported-family × representative diagonal --------------------
+        //
+        // Fifteen families this engine grades (direct-magic, S2, and the thirteen L15
+        // remainder). A predicate never shown a neighbour's refusal has not been shown to
+        // read the family at all. Every cell is stated rather than derived.
+        final String[] families = {
+                "direct-magic", "S2", "N6", "H5", "H6", "H7", "H9", "K4",
+                "S8/K-bounds", "S9", "S4/mid-log", "R4-floor", "R4-chain", "R4-self", "R6-audit",
+        };
+        final Throwable[] samples = {
+                magic,
+                s2,
+                new DBException.DataCorruption(
+                        "v1 single-file WAL present at /tmp/x.wal: no migration to v2"),
+                new DBException.DataCorruption(
+                        "WAL segment x.wal.0000000000000005: unsupported WAL format version 4"),
+                new DBException.DataCorruption(
+                        "WAL segment x.wal.0000000000000005: unknown segment flags 1"),
+                new DBException.DataCorruption(
+                        "WAL segment x.wal.0000000000000005: header sequence 6 does not match its name"),
+                new DBException.DataCorruption(
+                        "WAL segment x.wal.0000000000000005: header firstLsn 0 is not a valid LSN"),
+                new DBException.DataCorruption(
+                        "WAL segment x.wal.0000000000000004: clean mark in segment 4 authorizes "
+                                + "removing segment 4, including itself"),
+                new DBException.DataCorruption(
+                        "WAL segment x.wal.0000000000000004: clean mark attests cleanedThroughSeq 0"),
+                new DBException.DataCorruption(
+                        "WAL segment x.wal.0000000000000004: section LSNs must be consecutive: 12 "
+                                + "at offset 187 after 9"),
+                new DBException.DataCorruption(
+                        "WAL segment x.wal.0000000000000003: section body CRC mismatch at offset "
+                                + "100 in a non-final segment"),
+                new DBException.DataCorruption(
+                        "WAL retained log begins at LSN 3 in x.wal.0000000000000003 but the clean "
+                                + "mark attests it begins at 2: sections below it are gone"),
+                new DBException.DataCorruption(
+                        "WAL segment x.wal.0000000000000004 states it begins at LSN 10 but "
+                                + "x.wal.0000000000000003 accounts for LSNs up to 8: sections "
+                                + "between them are gone"),
+                new DBException.DataCorruption(
+                        "WAL segment x.wal.0000000000000003 states it begins at LSN 5 but its "
+                                + "first section is 6: its leading sections are gone"),
+                new DBException.DataCorruption(
+                        "WAL replay skipped 1 append(s) whose base image is absent and which no "
+                                + "later entry superseded (recid 4): the log is missing sections "
+                                + "it depends on"),
+        };
+        assertEquals(families.length, samples.length);
+        for (int i = 0; i < families.length; i++) {
+            for (int j = 0; j < samples.length; j++) {
+                String what = "sample[" + j + "] graded as " + families[i];
+                if (i == j) {
+                    XFixtureV2Executor.assertFamily(what, families[i], samples[j]);
+                } else {
+                    refusedFamily(what, families[i], samples[j]);
+                }
+            }
+        }
+        // S8 disjuncts beyond cleanedThroughSeq=0 (logStart and body-length).
+        XFixtureV2Executor.assertFamily("S8 logStartLsn", "S8/K-bounds",
+                new DBException.DataCorruption(
+                        "WAL segment x.wal.4: clean mark attests logStartLsn 0, which is not an "
+                                + "LSN at or below the mark's own 10"));
+        XFixtureV2Executor.assertFamily("S8 body length", "S8/K-bounds",
+                new DBException.DataCorruption(
+                        "WAL segment x.wal.4: clean mark body is 8 bytes, not 16"));
+        // S4 mid-log (active) form beside the non-final form in the matrix.
+        XFixtureV2Executor.assertFamily("S4 mid-log active", "S4/mid-log",
+                new DBException.DataCorruption(
+                        "WAL segment x.wal.5: mid-log corruption: section body CRC mismatch at "
+                                + "offset 100 but valid sections follow"));
+        // K4 must not be accepted as S8 (neighbour on the same mark).
+        refusedFamily("K4 presented as S8", "S8/K-bounds", samples[7]);
+        refusedFamily("S8 presented as K4", "K4", samples[8]);
+        // R4 triad: floor vs chain vs self.
+        refusedFamily("chain as floor", "R4-floor", samples[12]);
+        refusedFamily("self as chain", "R4-chain", samples[13]);
+        refusedFamily("floor as self", "R4-self", samples[11]);
     }
 
     private static void refusedFamily(String what, String family, Throwable t) {

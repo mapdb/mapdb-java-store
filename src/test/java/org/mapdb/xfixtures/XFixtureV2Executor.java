@@ -494,6 +494,77 @@ final class XFixtureV2Executor {
     static final Pattern S2 = Pattern.compile(
             "WAL segment [\\s\\S]+?: section LSN -?\\d+ at offset \\d+ does not follow -?\\d+");
 
+    // C8f f0 — the thirteen families L15 left ungraded. Same discipline as S2: whole-message
+    // match on the words the reference arm alone produces; the NAME between "WAL segment " and
+    // the rule's fixed marker is opaque ([\\s\\S]+?), because a Unix filename may hold a colon
+    // or a newline. Immediate neighbours (S2 vs S9; H5 vs H6; R4-floor vs R4-chain vs R4-self)
+    // must not cross-match — the discrimination battery in XFixtureCorpusTest is the proof.
+
+    static final Pattern S9 = Pattern.compile(
+            "WAL segment [\\s\\S]+?: section LSNs must be consecutive: -?\\d+ at offset \\d+ after -?\\d+");
+
+    static final Pattern N6 = Pattern.compile(
+            "v1 single-file WAL present at .+\\.wal: no migration to v2");
+
+    static final Pattern H5 = Pattern.compile(
+            "WAL segment [\\s\\S]+?: unsupported WAL format version -?\\d+");
+
+    static final Pattern H6 = Pattern.compile(
+            "WAL segment [\\s\\S]+?: unknown segment flags -?\\d+");
+
+    static final Pattern H7 = Pattern.compile(
+            "WAL segment [\\s\\S]+?: header sequence -?\\d+ does not match its name");
+
+    static final Pattern H9 = Pattern.compile(
+            "WAL segment [\\s\\S]+?: header firstLsn -?\\d+ is not a valid LSN");
+
+    static final Pattern K4 = Pattern.compile(
+            "WAL segment [\\s\\S]+?: clean mark in segment -?\\d+ authorizes removing segment -?\\d+, including itself");
+
+    // S8/K-bounds: three disjuncts on the 'K' body (body length, cleanedThroughSeq, logStartLsn).
+    // K4 is a neighbour check on the same mark and has its own family.
+    static final Pattern S8_BODY = Pattern.compile(
+            "WAL segment [\\s\\S]+?: clean mark body is -?\\d+ bytes, not 16");
+    static final Pattern S8_THROUGH = Pattern.compile(
+            "WAL segment [\\s\\S]+?: clean mark attests cleanedThroughSeq -?\\d+");
+    static final Pattern S8_START = Pattern.compile(
+            "WAL segment [\\s\\S]+?: clean mark attests logStartLsn -?\\d+, which is not an LSN at or below the mark's own -?\\d+");
+
+    // S4/mid-log: non-final body-CRC hold, or active mid-log (valid follower proves durable
+    // sections after damage). Header-damage S3 forms are not this family.
+    static final Pattern S4_NONFINAL = Pattern.compile(
+            "WAL segment [\\s\\S]+?: section body CRC mismatch at offset \\d+ in a non-final segment");
+    static final Pattern S4_MIDLOG = Pattern.compile(
+            "WAL segment [\\s\\S]+?: mid-log corruption: section body CRC mismatch at offset \\d+ but valid sections follow");
+
+    static final Pattern R4_FLOOR = Pattern.compile(
+            "WAL retained log begins at LSN -?\\d+ in [\\s\\S]+ but .+: sections below it are gone");
+
+    static final Pattern R4_CHAIN = Pattern.compile(
+            "WAL segment [\\s\\S]+? states it begins at LSN -?\\d+ but [\\s\\S]+ accounts for LSNs up to -?\\d+: sections between them are gone");
+
+    static final Pattern R4_SELF = Pattern.compile(
+            "WAL segment [\\s\\S]+? states it begins at LSN -?\\d+ but its first section is -?\\d+: its leading sections are gone");
+
+    static final Pattern R6_AUDIT = Pattern.compile(
+            "WAL replay skipped \\d+ append\\(s\\) whose base image is absent and which no later entry superseded \\(recid \\d+\\): the log is missing sections it depends on");
+
+    private static boolean isCorruption(Throwable t) {
+        return t instanceof DBException.DataCorruption;
+    }
+
+    private static boolean msgMatches(Pattern p, Throwable t) {
+        return t.getMessage() != null && p.matcher(t.getMessage()).matches();
+    }
+
+    private static boolean s8Matches(Throwable t) {
+        return msgMatches(S8_BODY, t) || msgMatches(S8_THROUGH, t) || msgMatches(S8_START, t);
+    }
+
+    private static boolean s4Matches(Throwable t) {
+        return msgMatches(S4_NONFINAL, t) || msgMatches(S4_MIDLOG, t);
+    }
+
     /**
      * Asserts a refusal belongs to the named contract family.
      *
@@ -503,10 +574,9 @@ final class XFixtureV2Executor {
      * alternative is a green cell whose reopen was checked by nothing.
      *
      * <p>Matching on the message is weaker than zig's typed {@code Diag.reason} and is what java
-     * has — {@code DBException.DataCorruption} is also D1's class, N6's and every other
-     * writer-defect verdict's, so the class alone identifies no rule. The pattern is anchored on
-     * the words the S2 arm alone produces, and {@link XFixtureCorpusTest} proves it does not match
-     * its immediate neighbour S9, which the corpus itself never varies.
+     * has — {@code DBException.DataCorruption} is also N6's class and every other writer-defect
+     * verdict's, so the class alone identifies no rule. Each arm is anchored on the words that
+     * arm alone produces; {@link XFixtureCorpusTest} proves the diagonal over the whole set.
      */
     static void assertFamily(String where, String family, Throwable t) {
         if ("direct-magic".equals(family)) {
@@ -527,9 +597,92 @@ final class XFixtureV2Executor {
         }
         if ("S2".equals(family)) {
             assertTrue(where + ": S2 is a corruption verdict, got " + t.getClass().getName()
-                    + ": " + t.getMessage(), t instanceof DBException.DataCorruption);
+                    + ": " + t.getMessage(), isCorruption(t));
             assertTrue(where + ": not the S2 rule's refusal: " + t.getMessage(),
-                    t.getMessage() != null && S2.matcher(t.getMessage()).matches());
+                    msgMatches(S2, t));
+            return;
+        }
+        // ---- C8f f0: L15 remainder (thirteen families) ----
+        if ("N6".equals(family)) {
+            assertTrue(where + ": N6 is a corruption verdict, got " + t.getClass().getName()
+                    + ": " + t.getMessage(), isCorruption(t));
+            assertTrue(where + ": not the N6 rule's refusal: " + t.getMessage(), msgMatches(N6, t));
+            return;
+        }
+        if ("H5".equals(family)) {
+            assertTrue(where + ": H5 is a corruption verdict, got " + t.getClass().getName()
+                    + ": " + t.getMessage(), isCorruption(t));
+            assertTrue(where + ": not the H5 rule's refusal: " + t.getMessage(), msgMatches(H5, t));
+            return;
+        }
+        if ("H6".equals(family)) {
+            assertTrue(where + ": H6 is a corruption verdict, got " + t.getClass().getName()
+                    + ": " + t.getMessage(), isCorruption(t));
+            assertTrue(where + ": not the H6 rule's refusal: " + t.getMessage(), msgMatches(H6, t));
+            return;
+        }
+        if ("H7".equals(family)) {
+            assertTrue(where + ": H7 is a corruption verdict, got " + t.getClass().getName()
+                    + ": " + t.getMessage(), isCorruption(t));
+            assertTrue(where + ": not the H7 rule's refusal: " + t.getMessage(), msgMatches(H7, t));
+            return;
+        }
+        if ("H9".equals(family)) {
+            assertTrue(where + ": H9 is a corruption verdict, got " + t.getClass().getName()
+                    + ": " + t.getMessage(), isCorruption(t));
+            assertTrue(where + ": not the H9 rule's refusal: " + t.getMessage(), msgMatches(H9, t));
+            return;
+        }
+        if ("K4".equals(family)) {
+            assertTrue(where + ": K4 is a corruption verdict, got " + t.getClass().getName()
+                    + ": " + t.getMessage(), isCorruption(t));
+            assertTrue(where + ": not the K4 rule's refusal: " + t.getMessage(), msgMatches(K4, t));
+            return;
+        }
+        if ("S8/K-bounds".equals(family)) {
+            assertTrue(where + ": S8/K-bounds is a corruption verdict, got " + t.getClass().getName()
+                    + ": " + t.getMessage(), isCorruption(t));
+            assertTrue(where + ": not an S8/K-bounds refusal: " + t.getMessage(), s8Matches(t));
+            return;
+        }
+        if ("S9".equals(family)) {
+            assertTrue(where + ": S9 is a corruption verdict, got " + t.getClass().getName()
+                    + ": " + t.getMessage(), isCorruption(t));
+            assertTrue(where + ": not the S9 rule's refusal: " + t.getMessage(), msgMatches(S9, t));
+            return;
+        }
+        if ("S4/mid-log".equals(family)) {
+            assertTrue(where + ": S4/mid-log is a corruption verdict, got " + t.getClass().getName()
+                    + ": " + t.getMessage(), isCorruption(t));
+            assertTrue(where + ": not an S4/mid-log refusal: " + t.getMessage(), s4Matches(t));
+            return;
+        }
+        if ("R4-floor".equals(family)) {
+            assertTrue(where + ": R4-floor is a corruption verdict, got " + t.getClass().getName()
+                    + ": " + t.getMessage(), isCorruption(t));
+            assertTrue(where + ": not the R4-floor refusal: " + t.getMessage(),
+                    msgMatches(R4_FLOOR, t));
+            return;
+        }
+        if ("R4-chain".equals(family)) {
+            assertTrue(where + ": R4-chain is a corruption verdict, got " + t.getClass().getName()
+                    + ": " + t.getMessage(), isCorruption(t));
+            assertTrue(where + ": not the R4-chain refusal: " + t.getMessage(),
+                    msgMatches(R4_CHAIN, t));
+            return;
+        }
+        if ("R4-self".equals(family)) {
+            assertTrue(where + ": R4-self is a corruption verdict, got " + t.getClass().getName()
+                    + ": " + t.getMessage(), isCorruption(t));
+            assertTrue(where + ": not the R4-self refusal: " + t.getMessage(),
+                    msgMatches(R4_SELF, t));
+            return;
+        }
+        if ("R6-audit".equals(family)) {
+            assertTrue(where + ": R6-audit is a corruption verdict, got " + t.getClass().getName()
+                    + ": " + t.getMessage(), isCorruption(t));
+            assertTrue(where + ": not the R6-audit refusal: " + t.getMessage(),
+                    msgMatches(R6_AUDIT, t));
             return;
         }
         fail(where + ": error family " + family + " has no predicate in this engine. Refusing "
