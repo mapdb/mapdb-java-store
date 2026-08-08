@@ -320,12 +320,14 @@ public class XFixtureConformanceTest {
                 "expect\tf\tjava\trw\taccept\twal3\tx",
                 "action\tf\tjava\trw\tcommit_one_record\top=put,payload_id=161,serializer=raw",
                 "bytes\tf\tjava\trw\tx.wal.0000000000000004\t187\t8000000000000000",
-                "reopen\tf\tjava\trw\tS2") + "\n").v2;
+                "reopen\tf\tjava\trw\tS2",
+                "family\tf\tjava\trw\tS2") + "\n").v2;
         assertEquals("rw", m.applies.get(0).mode);
         assertEquals("commit_one_record", m.actions.get(0).verb);
         assertEquals(187, m.bytes.get(0).offset);
         assertEquals("8000000000000000", m.bytes.get(0).hex);
         assertEquals("S2", m.reopens.get(0).family);
+        assertEquals("S2", m.families.get(0).family);
 
         String head = "version\t2\nfixture\tf\twal3-namespace\tjava\tc\n";
         refused("a duplicate applies row", head + "applies\tf\tjava\trw\napplies\tf\tjava\trw\n");
@@ -333,6 +335,8 @@ public class XFixtureConformanceTest {
                 + "action\tf\tjava\trw\tv\ta=1\naction\tf\tjava\trw\tv\ta=2\n");
         refused("a duplicate reopen row",
                 head + "reopen\tf\tjava\trw\tS2\nreopen\tf\tjava\trw\tS9\n");
+        refused("a duplicate family row",
+                head + "family\tf\tjava\trw\tS2\nfamily\tf\tjava\trw\tS9\n");
         refused("a duplicate bytes row at one offset", head
                 + "bytes\tf\tjava\trw\tx\t1\taa\nbytes\tf\tjava\trw\tx\t1\tbb\n");
         // `catalogue.render_action_args` sorts the keys and pins the value character class. A
@@ -357,6 +361,7 @@ public class XFixtureConformanceTest {
         refused("an out-of-vocabulary engine on an applies row",
                 head + "applies\tf\tocaml\trw\n");
         refused("a wrong-arity reopen row", head + "reopen\tf\tjava\trw\n");
+        refused("a wrong-arity family row", head + "family\tf\tjava\trw\n");
     }
 
     /**

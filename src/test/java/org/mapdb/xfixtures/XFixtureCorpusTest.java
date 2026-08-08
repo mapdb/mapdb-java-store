@@ -23,10 +23,11 @@ import static org.junit.Assert.fail;
  * <p>{@code /xfixtures-v2-corpus/} is a byte-identical copy of the {@code root}-marked files of
  * {@code todo/store-cross/corpus-v2/} — eighty-nine files: {@code MANIFEST.tsv} and one blob per
  * {@code file} row, and nothing else (C5 plan §4c). It is the {@code v2-oracle} profile: it carries
- * {@code applies}, {@code action}, {@code bytes} and {@code reopen} rows, all four of which this
- * engine EXECUTES. The static {@code /xfixtures-v2/} sample stays {@code v2-core} and is untouched
- * by C6; {@link XFixtureConformanceTest} still owns it, through the same executor. The dual reader
- * (v2 sample + this corpus root). C7j then retired the schema-v1 tree and dual dispatch.
+ * {@code applies}, {@code action}, {@code bytes}, {@code reopen} and (C8f f1) {@code family} rows,
+ * all of which this engine EXECUTES. The static {@code /xfixtures-v2/} sample stays {@code v2-core}
+ * and is untouched by C6; {@link XFixtureConformanceTest} still owns it, through the same executor.
+ * The dual reader (v2 sample + this corpus root). C7j then retired the schema-v1 tree and dual
+ * dispatch.
  *
  * <h2>What makes the copy more than a copy</h2>
  * Three roots hand-copied between four repositories is how the static sample survives today only by
@@ -127,7 +128,27 @@ public class XFixtureCorpusTest {
      * without it a manifest could have this suite run a cell it holds no verdict for.
      */
     @Test public void corpus_cells_conform() throws Exception {
-        runEveryJavaCell(manifest());
+        // Bridged until f2 seals family + full reopen transport into the frozen MANIFEST.
+        // {@link #frozen_corpus_still_awaits_c8f_f2_oracle_rows} pins the raw freeze gap.
+        runEveryJavaCell(bridgedManifest());
+    }
+
+    /**
+     * The distributed freeze still carries the pre-C8f oracle surface (no {@code family} rows;
+     * java reopen count 4). f2 rebuilds the corpus; until then the executor bridge supplies the
+     * catalogue-derived rows for the suite above. Delete this test when the freeze catches up.
+     */
+    @Test public void frozen_corpus_still_awaits_c8f_f2_oracle_rows() throws Exception {
+        XFixtureManifest.V2 m = manifest();
+        int families = 0, reopens = 0;
+        for (XFixtureManifest.V2.Family f : m.families)
+            if ("java".equals(f.engine)) families++;
+        for (XFixtureManifest.V2.Reopen r : m.reopens)
+            if ("java".equals(r.engine)) reopens++;
+        assertEquals("frozen MANIFEST already has java family rows — drop the C8f bridge",
+                0, families);
+        assertEquals("frozen MANIFEST already has full java reopen transport — drop the C8f bridge",
+                4, reopens);
     }
 
     /**
@@ -204,10 +225,10 @@ public class XFixtureCorpusTest {
         assertEquals("the corpus carries no `action` row for java, so this engine's action "
                 + "executor has no input at all", 1, actions);
         assertEquals("the corpus carries no `bytes` row for java", 1, bytes);
-        // TWO since C5t: Q8's `S2` row after the action, plus the `direct-magic` row plan §3.12
-        // derives for `reject-wal3-segment-at-direct` — the first reopen row this engine runs on a
-        // REJECT cell, where it grades the refusal's family and that the refusal is STABLE.
-        assertEquals("the corpus carries no `reopen` row for java", 4, reopens);
+        // C8f f1: full reopen transport for every non-mutating reject arm with a predicate, plus
+        // Q8's accept-side stability row — catalogue pin is 33 (was 4: Q8 + S2 pair + direct-magic).
+        // Frozen MANIFEST lags until f2 freeze; bridged doctored manifests already carry 33.
+        assertEquals("the corpus carries no `reopen` row for java", 33, reopens);
     }
 
     // -------------------------------------------------------------- the §3.11 mutant
@@ -228,7 +249,8 @@ public class XFixtureCorpusTest {
      * engine.
      */
     @Test public void a_direct_cell_sent_to_the_wal_opener_goes_red() throws Exception {
-        XFixtureManifest.V2 m = manifest();
+        // Bridged: frozen MANIFEST lacks family rows until f2; control path needs first-open family.
+        XFixtureManifest.V2 m = bridgedManifest();
         File session = tempDir("xfcorpus-mutant");
         XFixtureV2Executor.gunzipAll(m, ROOT, session);
         XFixtureV2Executor x = new XFixtureV2Executor(m, session);
@@ -407,14 +429,127 @@ public class XFixtureCorpusTest {
     // cases below doctor the manifest, run the real executor over the real bytes, and require the
     // rule to fire. Delete the rule and these two go red.
 
-    /** The corpus manifest, with {@code edits} applied to its text, re-parsed. */
+    /**
+     * Catalogue-derived java {@code family} + {@code reopen} rows (C8f f1 T1). Bridging only —
+     * f2 freeze will seal them into the distributed MANIFEST; this keeps isolation tests runnable
+     * against the still-stale frozen root without pretending the seal is current.
+     */
+    private static final String C8F_JAVA_FAMILY_ROWS = ""
+            + "family\treject-wal3-n6-barewal\tjava\tro\tN6\n"
+            + "family\treject-wal3-n6-barewal\tjava\trw\tN6\n"
+            + "family\treject-wal3-h5-version\tjava\tro\tH5\n"
+            + "family\treject-wal3-h5-version\tjava\trw\tH5\n"
+            + "family\treject-wal3-h6-flags\tjava\tro\tH6\n"
+            + "family\treject-wal3-h6-flags\tjava\trw\tH6\n"
+            + "family\treject-wal3-h7-seq\tjava\tro\tH7\n"
+            + "family\treject-wal3-h7-seq\tjava\trw\tH7\n"
+            + "family\treject-wal3-h9-firstlsn\tjava\tro\tH9\n"
+            + "family\treject-wal3-h9-firstlsn\tjava\trw\tH9\n"
+            + "family\treject-wal3-k4-through\tjava\tro\tK4\n"
+            + "family\treject-wal3-k4-through\tjava\trw\tK4\n"
+            + "family\treject-wal3-k-through0\tjava\tro\tS8/K-bounds\n"
+            + "family\treject-wal3-k-through0\tjava\trw\tS8/K-bounds\n"
+            + "family\treject-wal3-k-logstart0\tjava\tro\tS8/K-bounds\n"
+            + "family\treject-wal3-k-logstart0\tjava\trw\tS8/K-bounds\n"
+            + "family\treject-wal3-k-logstart-hi\tjava\tro\tS8/K-bounds\n"
+            + "family\treject-wal3-k-logstart-hi\tjava\trw\tS8/K-bounds\n"
+            + "family\treject-wal3-s2-lsn-regress\tjava\tro\tS2\n"
+            + "family\treject-wal3-s2-lsn-regress\tjava\trw\tS2\n"
+            + "family\treject-wal3-s9-gap\tjava\tro\tS9\n"
+            + "family\treject-wal3-s9-gap\tjava\trw\tS9\n"
+            + "family\treject-wal3-s4-midlog-crc\tjava\tro\tS4/mid-log\n"
+            + "family\treject-wal3-s4-midlog-crc\tjava\trw\tS4/mid-log\n"
+            + "family\treject-wal3-r4-floor\tjava\tro\tR4-floor\n"
+            + "family\treject-wal3-r4-floor\tjava\trw\tR4-floor\n"
+            + "family\treject-wal3-r4-chain\tjava\tro\tR4-chain\n"
+            + "family\treject-wal3-r4-chain\tjava\trw\tR4-chain\n"
+            + "family\treject-wal3-r4-self\tjava\tro\tR4-self\n"
+            + "family\treject-wal3-r4-self\tjava\trw\tR4-self\n"
+            + "family\treject-wal3-segment-at-direct\tjava\trw\tdirect-magic\n"
+            + "family\tmut-wal3-mark-then-refusal\tjava\tro\tR6-audit\n"
+            + "family\tmut-wal3-mark-then-refusal\tjava\trw\tR6-audit\n";
+
+    private static final String C8F_JAVA_REOPEN_ROWS = ""
+            + "reopen\treject-wal3-n6-barewal\tjava\tro\tN6\n"
+            + "reopen\treject-wal3-n6-barewal\tjava\trw\tN6\n"
+            + "reopen\treject-wal3-h5-version\tjava\tro\tH5\n"
+            + "reopen\treject-wal3-h5-version\tjava\trw\tH5\n"
+            + "reopen\treject-wal3-h6-flags\tjava\tro\tH6\n"
+            + "reopen\treject-wal3-h6-flags\tjava\trw\tH6\n"
+            + "reopen\treject-wal3-h7-seq\tjava\tro\tH7\n"
+            + "reopen\treject-wal3-h7-seq\tjava\trw\tH7\n"
+            + "reopen\treject-wal3-h9-firstlsn\tjava\tro\tH9\n"
+            + "reopen\treject-wal3-h9-firstlsn\tjava\trw\tH9\n"
+            + "reopen\treject-wal3-k4-through\tjava\tro\tK4\n"
+            + "reopen\treject-wal3-k4-through\tjava\trw\tK4\n"
+            + "reopen\treject-wal3-k-through0\tjava\tro\tS8/K-bounds\n"
+            + "reopen\treject-wal3-k-through0\tjava\trw\tS8/K-bounds\n"
+            + "reopen\treject-wal3-k-logstart0\tjava\tro\tS8/K-bounds\n"
+            + "reopen\treject-wal3-k-logstart0\tjava\trw\tS8/K-bounds\n"
+            + "reopen\treject-wal3-k-logstart-hi\tjava\tro\tS8/K-bounds\n"
+            + "reopen\treject-wal3-k-logstart-hi\tjava\trw\tS8/K-bounds\n"
+            + "reopen\treject-wal3-s2-lsn-regress\tjava\tro\tS2\n"
+            + "reopen\treject-wal3-s2-lsn-regress\tjava\trw\tS2\n"
+            + "reopen\treject-wal3-s9-gap\tjava\tro\tS9\n"
+            + "reopen\treject-wal3-s9-gap\tjava\trw\tS9\n"
+            + "reopen\treject-wal3-s4-midlog-crc\tjava\tro\tS4/mid-log\n"
+            + "reopen\treject-wal3-s4-midlog-crc\tjava\trw\tS4/mid-log\n"
+            + "reopen\treject-wal3-r4-floor\tjava\tro\tR4-floor\n"
+            + "reopen\treject-wal3-r4-floor\tjava\trw\tR4-floor\n"
+            + "reopen\treject-wal3-r4-chain\tjava\tro\tR4-chain\n"
+            + "reopen\treject-wal3-r4-chain\tjava\trw\tR4-chain\n"
+            + "reopen\treject-wal3-r4-self\tjava\tro\tR4-self\n"
+            + "reopen\treject-wal3-r4-self\tjava\trw\tR4-self\n"
+            + "reopen\treject-wal3-segment-at-direct\tjava\trw\tdirect-magic\n"
+            + "reopen\tmut-wal3-mark-then-refusal\tjava\tro\tR6-audit\n"
+            + "reopen\tdiv-wal3-lsn-exhausted\tjava\trw\tS2\n";
+
+    /**
+     * Appends any missing catalogue-derived java family/reopen keys. Existing rows (including
+     * doctored names) are left alone so isolation cases can still rename a single family.
+     */
+    private static String bridgeC8fOracleRows(String text) {
+        StringBuilder out = new StringBuilder(text.endsWith("\n") ? text : text + "\n");
+        for (String block : new String[] {C8F_JAVA_FAMILY_ROWS, C8F_JAVA_REOPEN_ROWS}) {
+            for (String line : block.split("\n", -1)) {
+                if (line.isEmpty()) continue;
+                String[] p = line.split("\t", -1);
+                // key = rowType + fixture + engine + mode (family name may be doctored)
+                String key = p[0] + "\t" + p[1] + "\t" + p[2] + "\t" + p[3] + "\t";
+                if (!textContainsRowKey(out.toString(), key))
+                    out.append(line).append('\n');
+            }
+        }
+        return out.toString();
+    }
+
+    private static boolean textContainsRowKey(String text, String key) {
+        for (String line : text.split("\n", -1))
+            if (line.startsWith(key)) return true;
+        return false;
+    }
+
+    /** Frozen MANIFEST + C8f f1 oracle rows the freeze has not sealed yet. */
+    private static XFixtureManifest.V2 bridgedManifest() throws IOException {
+        String text = new String(XFixtureV2Executor.resource(ROOT + "MANIFEST.tsv"),
+                StandardCharsets.UTF_8);
+        return XFixtureManifest.parse(bridgeC8fOracleRows(text)).v2;
+    }
+
+    /**
+     * The corpus manifest, with {@code edits} applied to its text, re-parsed.
+     *
+     * <p>C8f f1 bridge runs <em>before</em> the edit so a doctor that drops one oracle row is not
+     * silently refilled, and a doctor that renames a family still sees the bridged baseline.
+     */
     private static XFixtureManifest.V2 doctored(java.util.function.UnaryOperator<String> edit)
             throws IOException {
         String text = new String(XFixtureV2Executor.resource(ROOT + "MANIFEST.tsv"),
                 StandardCharsets.UTF_8);
-        String out = edit.apply(text);
+        String bridged = bridgeC8fOracleRows(text);
+        String out = edit.apply(bridged);
         assertTrue("the doctoring changed nothing, so this case grades the same manifest twice",
-                !out.equals(text));
+                !out.equals(bridged));
         return XFixtureManifest.parse(out).v2;
     }
 
@@ -513,7 +648,7 @@ public class XFixtureCorpusTest {
      * {@code bytes} row to {@code reject-wal3-d1-barebase} (a real fixture whose java cells are in
      * {@code EXPECT_EXCEPTIONS}) and fable moved the {@code reopen} row to the direct cell's absent
      * {@code ro} mode. Per-cell accounting is blind to both, because it owes only the rows addressed
-     * to the cell being run. All four addressed row types get their own doctored input, because the
+     * to the cell being run. Each addressed row type gets its own doctored input, because the
      * check is one loop per type and round 2 deleted two of them green when only the {@code bytes}
      * shape had a red — including the exact shape one reviewer had filed in round 1.
      */
@@ -531,12 +666,15 @@ public class XFixtureCorpusTest {
         refusesSuite("a reopen row addressed to a cell java never runs",
                 doctored(t -> t + "reopen\t" + absent + "\tjava\tro\tS2\n"),
                 "reopen " + absent + "/ro");
+        refusesSuite("a family row addressed to a cell java never runs",
+                doctored(t -> t + "family\t" + absent + "\tjava\tro\tS2\n"),
+                "family " + absent + "/ro");
         refusesSuite("an action row addressed to a cell java never runs",
                 doctored(t -> t + "action\t" + absent + "\tjava\trw\tcommit_one_record"
                         + "\top=put,payload_id=1,payload_len=1,recid_label=Z,serializer=raw\n"),
                 "action " + absent + "/rw");
-        // …and `post`, the fourth addressed row type — named by contract §2.3 since round 2, and
-        // droppable in silence on both sides of the fence before it was.
+        // …and `post`, named by contract §2.3 since round 2, and droppable in silence on both
+        // sides of the fence before it was.
         refusesSuite("a post row addressed to a cell java never runs",
                 doctored(t -> t + "post\t" + absent + "\tjava\tro\tz.lock\tunchanged\n"),
                 "post " + absent + "/ro");
@@ -596,23 +734,19 @@ public class XFixtureCorpusTest {
     }
 
     /**
-     * On a REJECT cell the family is graded on the cell's OWN refusal, before the reopen.
+     * On a REJECT cell the family is graded on the cell's OWN refusal via the {@code family} row
+     * (C8f f1), not via the reopen's second open.
      *
-     * <p>codex round 1 finding 2: C5t's first draft graded the family only on the reopen, which is a
-     * WRITABLE open whatever the cell's mode was. Every {@code mode=ro} row was therefore graded by
-     * a retry in the other mode, and a store that refuses read-only for one reason and writable for
-     * another passed.
-     *
-     * <p><b>The corpus alone cannot show the fix.</b> Both reference openers refuse the same way
-     * twice, so deleting the first grading leaves the reopen's — same family, same predicate, gate
-     * green. What separates them is WHERE the red comes from: this doctored family reds at
-     * {@code family[...]} if the cell's own refusal was graded and at {@code reopen[...]} if only
-     * the second open was. Asserting the prefix is what makes the deletion visible.
+     * <p>codex round 1 finding 2 (updated for f1): first-open grading used to live inside
+     * {@code assertReopen}. It now lives on the dedicated {@code family} row so mutating
+     * R6-audit/rw (family only, no reopen) is graded the same way. Doctor the family name to an
+     * unimplemented token and keep reopen correct — the red must name {@code family[H99]}, not
+     * {@code reopen[…]}.
      */
     @Test public void the_reject_arms_own_refusal_is_graded() throws Exception {
         XFixtureManifest.V2 m = doctored(t -> t.replace(
-                "reopen\treject-wal3-segment-at-direct\tjava\trw\tdirect-magic",
-                "reopen\treject-wal3-segment-at-direct\tjava\trw\tH99"));
+                "family\treject-wal3-segment-at-direct\tjava\trw\tdirect-magic",
+                "family\treject-wal3-segment-at-direct\tjava\trw\tH99"));
         File session = tempDir("xfcorpus-first");
         XFixtureV2Executor.gunzipAll(m, ROOT, session);
         AssertionError caught = null;
@@ -627,6 +761,44 @@ public class XFixtureCorpusTest {
                 caught.getMessage().contains("has no predicate in this engine"));
         assertTrue("the family was graded on the REOPEN, not on the cell's own refusal: "
                 + caught.getMessage(), caught.getMessage().contains("family[H99]"));
+    }
+
+    /**
+     * A reject arm without a {@code family} row is red — plan §4.2 absence is failure.
+     */
+    @Test public void a_reject_arm_without_a_family_row_fails() throws Exception {
+        XFixtureManifest.V2 m = doctored(t -> dropRows(t,
+                "family\treject-wal3-segment-at-direct\tjava\trw\t"));
+        File session = tempDir("xfcorpus-nofam");
+        XFixtureV2Executor.gunzipAll(m, ROOT, session);
+        AssertionError caught = null;
+        try {
+            new XFixtureV2Executor(m, session).runCell(
+                    javaCell(m, "reject-wal3-segment-at-direct", "rw"), tempDir("xfcorpus-nofamcell"));
+        } catch (AssertionError err) {
+            caught = err;
+        }
+        assertTrue("a reject arm with no family row passed", caught != null);
+        assertTrue("it failed for another reason: " + caught.getMessage(),
+                caught.getMessage().contains("exactly one family row"));
+    }
+
+    /**
+     * Mutating R6-audit/rw is graded by {@code family} alone — no reopen row required.
+     *
+     * <p>The catalogue bridge supplies {@code family … R6-audit} for java/rw and never a reopen
+     * for that arm. Running the cell green is the proof that first-open family grading does not
+     * depend on a reopen row.
+     */
+    @Test public void mutating_r6_audit_rw_is_graded_by_family_alone() throws Exception {
+        XFixtureManifest.V2 m = bridgedManifest();
+        assertTrue("bridge must not invent a reopen for mutating R6-audit/rw",
+                m.reopensOf("mut-wal3-mark-then-refusal", "java", "rw").isEmpty());
+        assertEquals(1, m.familiesOf("mut-wal3-mark-then-refusal", "java", "rw").size());
+        File session = tempDir("xfcorpus-mutr6");
+        XFixtureV2Executor.gunzipAll(m, ROOT, session);
+        new XFixtureV2Executor(m, session).runCell(
+                javaCell(m, "mut-wal3-mark-then-refusal", "rw"), tempDir("xfcorpus-mutr6cell"));
     }
 
     /**

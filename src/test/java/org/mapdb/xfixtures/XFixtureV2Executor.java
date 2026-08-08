@@ -46,17 +46,20 @@ import static org.junit.Assert.fail;
  *       capture, never the disk, because step 6 opens the store again;</li>
  *   <li>grade the {@code bytes} rows against the capture, then the {@code post} rows and the
  *       two-sided file-set rule;</li>
- *   <li>if a {@code reopen} row is addressed here, open again and require the named family.</li>
+ *   <li>on a {@code reject} cell, look up the {@code family} row and grade the first refusal
+ *       with {@link #assertFamily} (C8f f1 — every reject arm, including mutating R6-audit/rw);</li>
+ *   <li>if a {@code reopen} row is addressed here, open again and require the named family
+ *       on that <em>second</em> open only (stability; first-open grading lives on {@code family}).</li>
  * </ol>
  *
  * <h2>Consumption accounting, in two halves</h2>
- * Every {@code action}, {@code bytes}, {@code reopen} and {@code post} row addressed to the cell
- * being run must be consumed by a handler ({@link Consumption}). Of those four rows only the
- * {@code action} has a failure of its own — the whole-file {@code post} hash subsumes a
+ * Every {@code action}, {@code bytes}, {@code reopen}, {@code family} and {@code post} row
+ * addressed to the cell being run must be consumed by a handler ({@link Consumption}). Of those
+ * rows only the {@code action} has a failure of its own — the whole-file {@code post} hash subsumes a
  * byte-at-offset assertion, a dropped {@code unchanged} row is silently re-verified by the two-sided
- * unnamed-input rule, and <em>nothing at all</em> observes a dropped {@code reopen}. The accountant
- * is what made each of those visible; it is not the only red for all of them today, because later
- * rounds added doctored cases that also fire.
+ * unnamed-input rule, and <em>nothing at all</em> observes a dropped {@code reopen} or
+ * {@code family}. The accountant is what made each of those visible; it is not the only red for all
+ * of them today, because later rounds added doctored cases that also fire.
  *
  * <p>That is only half the rule, and shipping it as the whole rule is what both C5j reviewers
  * broke independently: an accountant built per cell cannot see a row addressed to a cell that does
@@ -109,8 +112,8 @@ final class XFixtureV2Executor {
     }
 
     /**
-     * Every {@code action}/{@code bytes}/{@code reopen}/{@code post} row addressed to java must name
-     * a cell this engine actually runs.
+     * Every {@code action}/{@code bytes}/{@code reopen}/{@code family}/{@code post} row addressed to
+     * java must name a cell this engine actually runs.
      *
      * <p>Per-cell consumption cannot see this, and both reviewers proved it independently: the
      * accountant is built from the rows addressed to the cell BEING RUN, so a row addressed to a
@@ -134,7 +137,10 @@ final class XFixtureV2Executor {
         for (XFixtureManifest.V2.Reopen r : m.reopens)
             if (ENGINE.equals(r.engine) && !ran.contains(r.fixtureId + "/" + r.mode))
                 orphans.add("reopen " + r.fixtureId + "/" + r.mode + " " + r.family);
-        // `post` is the FOURTH addressed row type. Round 2 found nothing on either side of the
+        for (XFixtureManifest.V2.Family f : m.families)
+            if (ENGINE.equals(f.engine) && !ran.contains(f.fixtureId + "/" + f.mode))
+                orphans.add("family " + f.fixtureId + "/" + f.mode + " " + f.family);
+        // `post` is an addressed row type. Round 2 found nothing on either side of the
         // fence caught one addressed to a cell no engine runs; §2.3 now names it, and it has a
         // per-cell debt as well (round 3 — the orphan case is this loop's, the dropped-by-its-own
         // -handler case is the accountant's).
@@ -164,6 +170,8 @@ final class XFixtureV2Executor {
             owed.owe("bytes " + b.relName + "@" + b.offset, b);
         for (XFixtureManifest.V2.Reopen r : m.reopensOf(e.fixtureId, ENGINE, e.mode))
             owed.owe("reopen " + r.family, r);
+        for (XFixtureManifest.V2.Family f : m.familiesOf(e.fixtureId, ENGINE, e.mode))
+            owed.owe("family " + f.family, f);
         // `post` too. Round 2 added it to the SUITE-WIDE half only, and codex showed the gap that
         // leaves: a post row addressed to a cell that RUNS could be skipped by its handler and the
         // two-sided unnamed-input rule would independently re-verify the same file, masking the
@@ -182,13 +190,17 @@ final class XFixtureV2Executor {
         String opener = dispatch == Dispatch.ALWAYS_WAL3 ? "wal3" : e.opener;
         File target = new File(cell, e.openArg);
         // The cell's OWN refusal, on a reject cell. Null on an accept cell, where there is none
-        // and the reopen row (Q8's) is graded alone.
+        // and the reopen row (Q8's) is graded alone on the second open.
         Throwable firstRefusal = null;
         switch (e.verdict) {
             case "accept" -> runAccept(ctx, e, opener, target, owed);
             case "reject" -> firstRefusal = assertRejected(ctx, opener, e.mode, target);
             default -> fail(ctx + ": unknown verdict " + e.verdict);
         }
+        // C8f f1: every reject arm grades first-open family via the dedicated `family` row.
+        // Absence is failure; accept cells must not carry one (unconsumed → red at accountant).
+        if ("reject".equals(e.verdict))
+            assertFirstOpenFamily(ctx, e, firstRefusal, owed);
 
         // THE CAPTURE. Taken before the reopen, because the reopen is an open: it happens not to
         // rewrite a segment today, and "happens not to" is not a property to hash a corpus
@@ -196,7 +208,7 @@ final class XFixtureV2Executor {
         Map<String, byte[]> after = capture(cell);
         assertBytesRows(ctx, e, after, owed);
         assertPostState(ctx, e, after, inputs, owed);
-        assertReopen(ctx, e, opener, target, owed, firstRefusal);
+        assertReopen(ctx, e, opener, target, owed);
         owed.requireAllConsumed();
     }
 
@@ -373,11 +385,11 @@ final class XFixtureV2Executor {
     /**
      * A reject cell must fail with the engine's corruption class, through the named opener.
      *
-     * <p>Returns the refusal, which the caller hands to {@link #assertReopen} — that is where the
-     * cell's {@code reopen} row grades its FAMILY. Held rather than graded here because §3.11's
-     * mutant (the direct cell dispatched to the wal3 opener) trips both the family check and the
-     * post-row rule it was written to prove, and lesson (h) says such an input measures whichever
-     * fires first.
+     * <p>Returns the refusal, which the caller hands to {@link #assertFirstOpenFamily} — that is
+     * where the cell's {@code family} row grades its FAMILY (C8f f1). Held rather than graded here
+     * because §3.11's mutant (the direct cell dispatched to the wal3 opener) trips both the family
+     * check and the post-row rule it was written to prove, and lesson (h) says such an input
+     * measures whichever fires first.
      */
     private static Throwable assertRejected(String ctx, String opener, String mode, File target) {
         Throwable t = refusalOf(ctx, opener, mode, target);
@@ -432,23 +444,40 @@ final class XFixtureV2Executor {
         }
     }
 
-    // ------------------------------------------------------------------ reopen
+    // ------------------------------------------------------------------ family (first open)
 
+    /**
+     * Grades the cell's OWN refusal against its {@code family} row (C8f f1 / plan §4.2).
+     *
+     * <p>Exactly one row is required on every reject arm — including mutating R6-audit/rw, which
+     * has no {@code reopen}. Absence is a hard failure (not a skip). The row is consumed once;
+     * a second consume or an unconsumed row reds at the accountant.
+     */
+    private void assertFirstOpenFamily(String ctx, XFixtureManifest.V2.Expect e,
+                                       Throwable first, Consumption owed) {
+        List<XFixtureManifest.V2.Family> fams = m.familiesOf(e.fixtureId, ENGINE, e.mode);
+        assertEquals(ctx + ": reject arm must carry exactly one family row (got " + fams.size()
+                        + ") — C8f f1 bijection; absence is failure",
+                1, fams.size());
+        XFixtureManifest.V2.Family f = fams.get(0);
+        assertFamily(ctx + " family[" + f.family + "]", f.family, first);
+        owed.consume("family " + f.family, f);
+    }
+
+    // ------------------------------------------------------------------ reopen (second open)
+
+    /**
+     * Stability second open: the store must refuse again with the named family.
+     *
+     * <p>First-open family grading lives on {@link #assertFirstOpenFamily} (the {@code family}
+     * row). This handler grades only the retry — so a store that fails once for the right reason
+     * and opens (or fails differently) on retry still reds. On accept cells (Q8) there is no
+     * first refusal and the reopen is the sole family grade.
+     */
     private void assertReopen(String ctx, XFixtureManifest.V2.Expect e, String opener,
-                              File target, Consumption owed, Throwable first) {
+                              File target, Consumption owed) {
         for (XFixtureManifest.V2.Reopen r : m.reopensOf(e.fixtureId, ENGINE, e.mode)) {
             String where = ctx + " reopen[" + r.family + "]";
-            // THE CELL'S OWN REFUSAL FIRST, where there was one. C5t's first draft graded the
-            // family on the reopen alone and threw the first refusal away; codex round 1 finding 2
-            // is why it does not. The reopen is a WRITABLE open whatever the cell's mode was, so
-            // every mode=ro row was graded on a retry in the OTHER mode — a store that refuses
-            // read-only for one reason and writable for another passed, and so did a stateful one
-            // that got it wrong once and right on retry. The arm the corpus names is the first
-            // open; the second is the stability check.
-            //
-            // On an ACCEPT cell — Q8 — `first` is null and the reopen is the only grading there
-            // is, because the cell's own open succeeded.
-            if (first != null) assertFamily(ctx + " family[" + r.family + "]", r.family, first);
             // A reopen is a WRITABLE open whatever the cell's own mode was: the claim is that the
             // store is permanently unopenable, and a read-only probe would be a weaker one.
             // Through the cell's OWN opener, not a hard-coded `wal3`. Until C5t only Q8 had a

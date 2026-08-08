@@ -88,6 +88,17 @@ final class XFixtureManifest {
             String fixtureId, engine, mode, family;
         }
 
+        /**
+         * {@code family <fid> <engine> <mode> <family>} — first-open refusal family (C8f f1).
+         *
+         * <p>Bijection with reject arms: every reject cell carries exactly one; accept cells
+         * carry none. Distinct from {@link Reopen}, which is the stability second open (and is
+         * still omitted on mutating R6-audit/rw).
+         */
+        static final class Family {
+            String fixtureId, engine, mode, family;
+        }
+
         final Map<String, String> fixtureKinds = new LinkedHashMap<>();
         final List<FileRow> files = new ArrayList<>();
         final List<Expect> expects = new ArrayList<>();
@@ -96,6 +107,7 @@ final class XFixtureManifest {
         final List<Action> actions = new ArrayList<>();
         final List<Bytes> bytes = new ArrayList<>();
         final List<Reopen> reopens = new ArrayList<>();
+        final List<Family> families = new ArrayList<>();
         final Map<String, List<FixtureWriter.RecidExpect>> recids = new HashMap<>();
 
         /** A v2 fixture is a whole namespace: one or more file rows, in manifest order. */
@@ -135,6 +147,14 @@ final class XFixtureManifest {
             for (Reopen r : reopens)
                 if (r.fixtureId.equals(fixtureId) && r.engine.equals(engine) && r.mode.equals(mode))
                     out.add(r);
+            return out;
+        }
+
+        List<Family> familiesOf(String fixtureId, String engine, String mode) {
+            List<Family> out = new ArrayList<>();
+            for (Family f : families)
+                if (f.fixtureId.equals(fixtureId) && f.engine.equals(engine) && f.mode.equals(mode))
+                    out.add(f);
             return out;
         }
     }
@@ -327,6 +347,25 @@ final class XFixtureManifest {
                                 "duplicate reopen row for " + r.fixtureId + "/" + r.engine + "/"
                                         + r.mode + ": " + line);
                     m.reopens.add(r);
+                    break;
+                }
+                case "family": {
+                    // C8f f1 — first-open family oracle. Same arity/shape as reopen; the executor
+                    // grades the cell's OWN refusal against this row and consumes it exactly once.
+                    // Vocabulary is not checked here for the same reason as reopen: the executor's
+                    // assertFamily is the gate that refuses an unimplemented name.
+                    arity(t, 5, line);
+                    V2.Family f = new V2.Family();
+                    f.fixtureId = t[1];
+                    f.engine = vocab(t[2], ENGINES, "engine", line);
+                    f.mode = vocab(t[3], MODES, "mode", line);
+                    f.family = t[4];
+                    for (V2.Family prior : m.families)
+                        check(!cellEq(prior.fixtureId, prior.engine, prior.mode, f.fixtureId,
+                                        f.engine, f.mode),
+                                "duplicate family row for " + f.fixtureId + "/" + f.engine + "/"
+                                        + f.mode + ": " + line);
+                    m.families.add(f);
                     break;
                 }
                 case "bytes": {
