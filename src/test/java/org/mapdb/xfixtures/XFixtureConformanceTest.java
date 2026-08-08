@@ -80,10 +80,10 @@ public class XFixtureConformanceTest {
      * The static sample's cells, through the shared v2 executor.
      *
      * <p>The sample is the {@code v2-core} profile — no {@code applies}, {@code action},
-     * {@code bytes} or {@code reopen} rows — and it runs under exactly the same rules as the
-     * corpus. An earlier draft gave the corpus a relaxed accept rule the sample did not get; both
-     * C5j reviewers showed that was a deletion rather than the disjunction the plan asked for, so
-     * there is no per-root knob left to state.
+     * {@code bytes}, {@code reopen} or {@code family} rows — and it runs under exactly the same
+     * rules as the corpus. An earlier draft gave the corpus a relaxed accept rule the sample did
+     * not get; both C5j reviewers showed that was a deletion rather than the disjunction the plan
+     * asked for, so there is no per-root knob left to state.
      */
     @Test public void sample_v2_cells_conform() throws Exception {
         XFixtureManifest.Loaded loaded = XFixtureManifest.load(V2_ROOT);
@@ -96,10 +96,12 @@ public class XFixtureConformanceTest {
 
         // The sample is v2-core, in BOTH directions. A root that grew an oracle row would be
         // running assertions this test's rules never bought, and — since C5 moved the profile
-        // split into the grammar — that is a refusal rather than a widening.
+        // split into the grammar — that is a refusal rather than a widening. C8f f1: `family` is
+        // oracle-profile-only too (plan §4.2); without this check a family row addressed to
+        // another engine is invisible to the java executor and suite orphan and stays green.
         assertTrue("the static sample carries an oracle row; it is v2-core through C7",
                 m.applies.isEmpty() && m.actions.isEmpty() && m.bytes.isEmpty()
-                        && m.reopens.isEmpty());
+                        && m.reopens.isEmpty() && m.families.isEmpty());
 
         // WHAT SHOULD RUN, derived from a DIFFERENT row type than the one that says what will.
         // An earlier revision only checked that the cells it happened to run covered both modes,
@@ -126,6 +128,27 @@ public class XFixtureConformanceTest {
         }
         assertEquals("the java cells that ran are not the ones the fixture rows call for",
                 want, ran);
+    }
+
+    /**
+     * {@code family} is oracle-profile-only (C8f f1 / plan §4.2). A well-formed family row
+     * addressed to another engine is invisible to the java cell executor and the suite-wide
+     * orphan scan (both filter on {@code engine == java}), so the v2-core profile gate is the
+     * only red. This case doctors the static sample with such a row and proves the gate alone
+     * refuses it — matching rust/zig's {@code families.is_empty()} checks.
+     */
+    @Test public void sample_v2_core_refuses_a_family_row() throws Exception {
+        String text = new String(resource(V2_ROOT + "MANIFEST.tsv"), StandardCharsets.UTF_8);
+        // Address the row away from every java run cell so only the profile gate can fire.
+        String doctored = text + (text.endsWith("\n") ? "" : "\n")
+                + "family\twal3-java-tail\trust\trw\tS2\n";
+        XFixtureManifest.V2 m = XFixtureManifest.parse(doctored).v2;
+        assertEquals("doctoring must leave a parseable family row", 1, m.families.size());
+        assertEquals("rust", m.families.get(0).engine);
+        boolean v2Core = m.applies.isEmpty() && m.actions.isEmpty() && m.bytes.isEmpty()
+                && m.reopens.isEmpty() && m.families.isEmpty();
+        assertTrue("v2-core profile gate must refuse a family row (even one addressed to rust)",
+                !v2Core);
     }
 
     // ---------- framing: the engine's decode against GOLDEN-DECODE.tsv ----------
