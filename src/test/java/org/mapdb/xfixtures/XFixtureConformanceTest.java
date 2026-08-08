@@ -96,12 +96,8 @@ public class XFixtureConformanceTest {
 
         // The sample is v2-core, in BOTH directions. A root that grew an oracle row would be
         // running assertions this test's rules never bought, and — since C5 moved the profile
-        // split into the grammar — that is a refusal rather than a widening. C8f f1: `family` is
-        // oracle-profile-only too (plan §4.2); without this check a family row addressed to
-        // another engine is invisible to the java executor and suite orphan and stays green.
-        assertTrue("the static sample carries an oracle row; it is v2-core through C7",
-                m.applies.isEmpty() && m.actions.isEmpty() && m.bytes.isEmpty()
-                        && m.reopens.isEmpty() && m.families.isEmpty());
+        // split into the grammar — that is a refusal rather than a widening.
+        requireV2CoreProfile(m);
 
         // WHAT SHOULD RUN, derived from a DIFFERENT row type than the one that says what will.
         // An earlier revision only checked that the cells it happened to run covered both modes,
@@ -134,8 +130,10 @@ public class XFixtureConformanceTest {
      * {@code family} is oracle-profile-only (C8f f1 / plan §4.2). A well-formed family row
      * addressed to another engine is invisible to the java cell executor and the suite-wide
      * orphan scan (both filter on {@code engine == java}), so the v2-core profile gate is the
-     * only red. This case doctors the static sample with such a row and proves the gate alone
-     * refuses it — matching rust/zig's {@code families.is_empty()} checks.
+     * only red. This case doctors the static sample with such a row and requires the
+     * <em>same</em> {@link #requireV2CoreProfile} helper used by
+     * {@link #sample_v2_cells_conform} to throw — so deleting {@code families.isEmpty()} from
+     * that single gate turns this doctor red too.
      */
     @Test public void sample_v2_core_refuses_a_family_row() throws Exception {
         String text = new String(resource(V2_ROOT + "MANIFEST.tsv"), StandardCharsets.UTF_8);
@@ -145,10 +143,34 @@ public class XFixtureConformanceTest {
         XFixtureManifest.V2 m = XFixtureManifest.parse(doctored).v2;
         assertEquals("doctoring must leave a parseable family row", 1, m.families.size());
         assertEquals("rust", m.families.get(0).engine);
-        boolean v2Core = m.applies.isEmpty() && m.actions.isEmpty() && m.bytes.isEmpty()
-                && m.reopens.isEmpty() && m.families.isEmpty();
-        assertTrue("v2-core profile gate must refuse a family row (even one addressed to rust)",
-                !v2Core);
+        boolean accepted;
+        AssertionError refusal = null;
+        try {
+            requireV2CoreProfile(m);
+            accepted = true;
+        } catch (AssertionError e) {
+            accepted = false;
+            refusal = e;
+        }
+        assertTrue("v2-core profile gate accepted a family row addressed to rust", !accepted);
+        assertTrue("refusal must name the v2-core gate",
+                refusal.getMessage() != null
+                        && refusal.getMessage().contains("oracle row"));
+    }
+
+    /**
+     * Single implementation of the static-sample v2-core profile gate.
+     *
+     * <p>C8f f1: {@code family} is oracle-profile-only (plan §4.2). Without the
+     * {@code families.isEmpty()} conjunct a family row addressed to another engine is invisible
+     * to the java executor and suite orphan and the sample suite stays green. Both
+     * {@link #sample_v2_cells_conform} and {@link #sample_v2_core_refuses_a_family_row} call this
+     * helper so there is only one predicate to delete.
+     */
+    static void requireV2CoreProfile(XFixtureManifest.V2 m) {
+        assertTrue("the static sample carries an oracle row; it is v2-core through C7",
+                m.applies.isEmpty() && m.actions.isEmpty() && m.bytes.isEmpty()
+                        && m.reopens.isEmpty() && m.families.isEmpty());
     }
 
     // ---------- framing: the engine's decode against GOLDEN-DECODE.tsv ----------
