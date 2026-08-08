@@ -89,7 +89,7 @@ public class XFixtureCorpusTest {
      * <p>Regenerate with {@code python3 todo/store-cross/freeze_v2.py --dist-seals --corpus}.
      */
     static final String DIST_SEAL =
-            "f805a3c291e4b2bf4a405451e46116d0e4fa99e896e30d12e8aad9807f1e078f";
+            "7377e7778ed83c48fd62bf800b0f022570cdc9f1605bc3611fb001e548d71da3";
 
     private final List<File> dirs = new ArrayList<>();
 
@@ -128,27 +128,8 @@ public class XFixtureCorpusTest {
      * without it a manifest could have this suite run a cell it holds no verdict for.
      */
     @Test public void corpus_cells_conform() throws Exception {
-        // Bridged until f2 seals family + full reopen transport into the frozen MANIFEST.
-        // {@link #frozen_corpus_still_awaits_c8f_f2_oracle_rows} pins the raw freeze gap.
-        runEveryJavaCell(bridgedManifest());
-    }
-
-    /**
-     * The distributed freeze still carries the pre-C8f oracle surface (no {@code family} rows;
-     * java reopen count 4). f2 rebuilds the corpus; until then the executor bridge supplies the
-     * catalogue-derived rows for the suite above. Delete this test when the freeze catches up.
-     */
-    @Test public void frozen_corpus_still_awaits_c8f_f2_oracle_rows() throws Exception {
-        XFixtureManifest.V2 m = manifest();
-        int families = 0, reopens = 0;
-        for (XFixtureManifest.V2.Family f : m.families)
-            if ("java".equals(f.engine)) families++;
-        for (XFixtureManifest.V2.Reopen r : m.reopens)
-            if ("java".equals(r.engine)) reopens++;
-        assertEquals("frozen MANIFEST already has java family rows — drop the C8f bridge",
-                0, families);
-        assertEquals("frozen MANIFEST already has full java reopen transport — drop the C8f bridge",
-                4, reopens);
+        // Raw sealed MANIFEST (C8f f2/f3): family + full reopen transport live in the freeze.
+        runEveryJavaCell(manifest());
     }
 
     /**
@@ -225,9 +206,8 @@ public class XFixtureCorpusTest {
         assertEquals("the corpus carries no `action` row for java, so this engine's action "
                 + "executor has no input at all", 1, actions);
         assertEquals("the corpus carries no `bytes` row for java", 1, bytes);
-        // C8f f1: full reopen transport for every non-mutating reject arm with a predicate, plus
+        // C8f f1/f2: full reopen transport for every non-mutating reject arm with a predicate, plus
         // Q8's accept-side stability row — catalogue pin is 33 (was 4: Q8 + S2 pair + direct-magic).
-        // Frozen MANIFEST lags until f2 freeze; bridged doctored manifests already carry 33.
         assertEquals("the corpus carries no `reopen` row for java", 33, reopens);
     }
 
@@ -249,8 +229,7 @@ public class XFixtureCorpusTest {
      * engine.
      */
     @Test public void a_direct_cell_sent_to_the_wal_opener_goes_red() throws Exception {
-        // Bridged: frozen MANIFEST lacks family rows until f2; control path needs first-open family.
-        XFixtureManifest.V2 m = bridgedManifest();
+        XFixtureManifest.V2 m = manifest();
         File session = tempDir("xfcorpus-mutant");
         XFixtureV2Executor.gunzipAll(m, ROOT, session);
         XFixtureV2Executor x = new XFixtureV2Executor(m, session);
@@ -430,126 +409,18 @@ public class XFixtureCorpusTest {
     // rule to fire. Delete the rule and these two go red.
 
     /**
-     * Catalogue-derived java {@code family} + {@code reopen} rows (C8f f1 T1). Bridging only —
-     * f2 freeze will seal them into the distributed MANIFEST; this keeps isolation tests runnable
-     * against the still-stale frozen root without pretending the seal is current.
-     */
-    private static final String C8F_JAVA_FAMILY_ROWS = ""
-            + "family\treject-wal3-n6-barewal\tjava\tro\tN6\n"
-            + "family\treject-wal3-n6-barewal\tjava\trw\tN6\n"
-            + "family\treject-wal3-h5-version\tjava\tro\tH5\n"
-            + "family\treject-wal3-h5-version\tjava\trw\tH5\n"
-            + "family\treject-wal3-h6-flags\tjava\tro\tH6\n"
-            + "family\treject-wal3-h6-flags\tjava\trw\tH6\n"
-            + "family\treject-wal3-h7-seq\tjava\tro\tH7\n"
-            + "family\treject-wal3-h7-seq\tjava\trw\tH7\n"
-            + "family\treject-wal3-h9-firstlsn\tjava\tro\tH9\n"
-            + "family\treject-wal3-h9-firstlsn\tjava\trw\tH9\n"
-            + "family\treject-wal3-k4-through\tjava\tro\tK4\n"
-            + "family\treject-wal3-k4-through\tjava\trw\tK4\n"
-            + "family\treject-wal3-k-through0\tjava\tro\tS8/K-bounds\n"
-            + "family\treject-wal3-k-through0\tjava\trw\tS8/K-bounds\n"
-            + "family\treject-wal3-k-logstart0\tjava\tro\tS8/K-bounds\n"
-            + "family\treject-wal3-k-logstart0\tjava\trw\tS8/K-bounds\n"
-            + "family\treject-wal3-k-logstart-hi\tjava\tro\tS8/K-bounds\n"
-            + "family\treject-wal3-k-logstart-hi\tjava\trw\tS8/K-bounds\n"
-            + "family\treject-wal3-s2-lsn-regress\tjava\tro\tS2\n"
-            + "family\treject-wal3-s2-lsn-regress\tjava\trw\tS2\n"
-            + "family\treject-wal3-s9-gap\tjava\tro\tS9\n"
-            + "family\treject-wal3-s9-gap\tjava\trw\tS9\n"
-            + "family\treject-wal3-s4-midlog-crc\tjava\tro\tS4/mid-log\n"
-            + "family\treject-wal3-s4-midlog-crc\tjava\trw\tS4/mid-log\n"
-            + "family\treject-wal3-r4-floor\tjava\tro\tR4-floor\n"
-            + "family\treject-wal3-r4-floor\tjava\trw\tR4-floor\n"
-            + "family\treject-wal3-r4-chain\tjava\tro\tR4-chain\n"
-            + "family\treject-wal3-r4-chain\tjava\trw\tR4-chain\n"
-            + "family\treject-wal3-r4-self\tjava\tro\tR4-self\n"
-            + "family\treject-wal3-r4-self\tjava\trw\tR4-self\n"
-            + "family\treject-wal3-segment-at-direct\tjava\trw\tdirect-magic\n"
-            + "family\tmut-wal3-mark-then-refusal\tjava\tro\tR6-audit\n"
-            + "family\tmut-wal3-mark-then-refusal\tjava\trw\tR6-audit\n";
-
-    private static final String C8F_JAVA_REOPEN_ROWS = ""
-            + "reopen\treject-wal3-n6-barewal\tjava\tro\tN6\n"
-            + "reopen\treject-wal3-n6-barewal\tjava\trw\tN6\n"
-            + "reopen\treject-wal3-h5-version\tjava\tro\tH5\n"
-            + "reopen\treject-wal3-h5-version\tjava\trw\tH5\n"
-            + "reopen\treject-wal3-h6-flags\tjava\tro\tH6\n"
-            + "reopen\treject-wal3-h6-flags\tjava\trw\tH6\n"
-            + "reopen\treject-wal3-h7-seq\tjava\tro\tH7\n"
-            + "reopen\treject-wal3-h7-seq\tjava\trw\tH7\n"
-            + "reopen\treject-wal3-h9-firstlsn\tjava\tro\tH9\n"
-            + "reopen\treject-wal3-h9-firstlsn\tjava\trw\tH9\n"
-            + "reopen\treject-wal3-k4-through\tjava\tro\tK4\n"
-            + "reopen\treject-wal3-k4-through\tjava\trw\tK4\n"
-            + "reopen\treject-wal3-k-through0\tjava\tro\tS8/K-bounds\n"
-            + "reopen\treject-wal3-k-through0\tjava\trw\tS8/K-bounds\n"
-            + "reopen\treject-wal3-k-logstart0\tjava\tro\tS8/K-bounds\n"
-            + "reopen\treject-wal3-k-logstart0\tjava\trw\tS8/K-bounds\n"
-            + "reopen\treject-wal3-k-logstart-hi\tjava\tro\tS8/K-bounds\n"
-            + "reopen\treject-wal3-k-logstart-hi\tjava\trw\tS8/K-bounds\n"
-            + "reopen\treject-wal3-s2-lsn-regress\tjava\tro\tS2\n"
-            + "reopen\treject-wal3-s2-lsn-regress\tjava\trw\tS2\n"
-            + "reopen\treject-wal3-s9-gap\tjava\tro\tS9\n"
-            + "reopen\treject-wal3-s9-gap\tjava\trw\tS9\n"
-            + "reopen\treject-wal3-s4-midlog-crc\tjava\tro\tS4/mid-log\n"
-            + "reopen\treject-wal3-s4-midlog-crc\tjava\trw\tS4/mid-log\n"
-            + "reopen\treject-wal3-r4-floor\tjava\tro\tR4-floor\n"
-            + "reopen\treject-wal3-r4-floor\tjava\trw\tR4-floor\n"
-            + "reopen\treject-wal3-r4-chain\tjava\tro\tR4-chain\n"
-            + "reopen\treject-wal3-r4-chain\tjava\trw\tR4-chain\n"
-            + "reopen\treject-wal3-r4-self\tjava\tro\tR4-self\n"
-            + "reopen\treject-wal3-r4-self\tjava\trw\tR4-self\n"
-            + "reopen\treject-wal3-segment-at-direct\tjava\trw\tdirect-magic\n"
-            + "reopen\tmut-wal3-mark-then-refusal\tjava\tro\tR6-audit\n"
-            + "reopen\tdiv-wal3-lsn-exhausted\tjava\trw\tS2\n";
-
-    /**
-     * Appends any missing catalogue-derived java family/reopen keys. Existing rows (including
-     * doctored names) are left alone so isolation cases can still rename a single family.
-     */
-    private static String bridgeC8fOracleRows(String text) {
-        StringBuilder out = new StringBuilder(text.endsWith("\n") ? text : text + "\n");
-        for (String block : new String[] {C8F_JAVA_FAMILY_ROWS, C8F_JAVA_REOPEN_ROWS}) {
-            for (String line : block.split("\n", -1)) {
-                if (line.isEmpty()) continue;
-                String[] p = line.split("\t", -1);
-                // key = rowType + fixture + engine + mode (family name may be doctored)
-                String key = p[0] + "\t" + p[1] + "\t" + p[2] + "\t" + p[3] + "\t";
-                if (!textContainsRowKey(out.toString(), key))
-                    out.append(line).append('\n');
-            }
-        }
-        return out.toString();
-    }
-
-    private static boolean textContainsRowKey(String text, String key) {
-        for (String line : text.split("\n", -1))
-            if (line.startsWith(key)) return true;
-        return false;
-    }
-
-    /** Frozen MANIFEST + C8f f1 oracle rows the freeze has not sealed yet. */
-    private static XFixtureManifest.V2 bridgedManifest() throws IOException {
-        String text = new String(XFixtureV2Executor.resource(ROOT + "MANIFEST.tsv"),
-                StandardCharsets.UTF_8);
-        return XFixtureManifest.parse(bridgeC8fOracleRows(text)).v2;
-    }
-
-    /**
-     * The corpus manifest, with {@code edits} applied to its text, re-parsed.
+     * The sealed corpus MANIFEST, with {@code edits} applied to its raw text, re-parsed.
      *
-     * <p>C8f f1 bridge runs <em>before</em> the edit so a doctor that drops one oracle row is not
-     * silently refilled, and a doctor that renames a family still sees the bridged baseline.
+     * <p>Doctors operate on the frozen root only — no inject/bridge of family or reopen rows
+     * (C8f f3). Missing/wrong/orphan family reds grade against that sealed text.
      */
     private static XFixtureManifest.V2 doctored(java.util.function.UnaryOperator<String> edit)
             throws IOException {
         String text = new String(XFixtureV2Executor.resource(ROOT + "MANIFEST.tsv"),
                 StandardCharsets.UTF_8);
-        String bridged = bridgeC8fOracleRows(text);
-        String out = edit.apply(bridged);
+        String out = edit.apply(text);
         assertTrue("the doctoring changed nothing, so this case grades the same manifest twice",
-                !out.equals(bridged));
+                !out.equals(text));
         return XFixtureManifest.parse(out).v2;
     }
 
@@ -786,13 +657,13 @@ public class XFixtureCorpusTest {
     /**
      * Mutating R6-audit/rw is graded by {@code family} alone — no reopen row required.
      *
-     * <p>The catalogue bridge supplies {@code family … R6-audit} for java/rw and never a reopen
+     * <p>The sealed MANIFEST carries {@code family … R6-audit} for java/rw and never a reopen
      * for that arm. Running the cell green is the proof that first-open family grading does not
      * depend on a reopen row.
      */
     @Test public void mutating_r6_audit_rw_is_graded_by_family_alone() throws Exception {
-        XFixtureManifest.V2 m = bridgedManifest();
-        assertTrue("bridge must not invent a reopen for mutating R6-audit/rw",
+        XFixtureManifest.V2 m = manifest();
+        assertTrue("sealed MANIFEST must not invent a reopen for mutating R6-audit/rw",
                 m.reopensOf("mut-wal3-mark-then-refusal", "java", "rw").isEmpty());
         assertEquals(1, m.familiesOf("mut-wal3-mark-then-refusal", "java", "rw").size());
         File session = tempDir("xfcorpus-mutr6");
