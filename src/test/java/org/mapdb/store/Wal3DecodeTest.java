@@ -252,6 +252,15 @@ public class Wal3DecodeTest {
         byte[] badDeltaBody = java.util.Arrays.copyOf(badDelta.buf, badDelta.pos);
         refused("a T_APPEND with delta outside [1, lsn-1]",
                 () -> Wal3Decode.entries(only(segment(1, 1, 'S', badDeltaBody)), "synthetic"));
+        // Legal delta, overlong len: claims more payload than remains (C9a §4.3).
+        DataOutput2 overLen = new DataOutput2(16);
+        overLen.writeByte(StoreWAL.T_APPEND);
+        overLen.packLong(1);
+        overLen.packLong(1); // delta=1, section LSN 5 → ok
+        overLen.packLong(100); // len, no payload bytes follow
+        byte[] overLenBody = java.util.Arrays.copyOf(overLen.buf, overLen.pos);
+        refused("a T_APPEND whose len overruns the section body",
+                () -> Wal3Decode.entries(only(segment(1, 5, 'S', overLenBody)), "synthetic"));
     }
 
     /** Well-formed T_APPEND decodes delta, baseLsn, len and payload (C9a / O1). */
