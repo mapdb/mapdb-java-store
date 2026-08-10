@@ -21,7 +21,8 @@ import java.util.concurrent.TimeUnit;
  *   MAPDB_LOCK_PROBE_RELEASE=&lt;path&gt;   # hold only
  * </pre>
  *
- * <p>CLI flags are accepted as an equivalent form ({@code hold|open --base … --mode …}).
+ * <p>CLI flags are accepted as an equivalent form ({@code hold|open --base … --mode …}); where a
+ * flag and its environment variable are both present, <b>the flag wins</b>.
  *
  * <p>Exit codes: 0 protocol completed (verdict on stdout); 2 bad invocation; 3 infrastructure.
  *
@@ -69,9 +70,13 @@ public final class Wal3LockProbe {
             Files.writeString(ready, "ready\n", StandardCharsets.UTF_8);
             System.out.println("HOLD_READY");
             System.out.flush();
+            // `now - deadline > 0`, not `now > deadline`: System.nanoTime()'s origin is arbitrary
+            // and the value may sit near Long.MAX_VALUE, where the sum above wraps and a plain
+            // comparison fires immediately (or never). The subtraction is correct across the wrap
+            // — the same reason the JDK's own timed waits are written this way.
             long deadline = System.nanoTime() + TimeUnit.MINUTES.toNanos(30);
             while (!Files.exists(release)) {
-                if (System.nanoTime() > deadline) {
+                if (System.nanoTime() - deadline > 0) {
                     throw new IOException("release file never appeared: " + release);
                 }
                 Thread.sleep(20);
@@ -81,7 +86,7 @@ public final class Wal3LockProbe {
         }
     }
 
-    private static void open(Args a) {
+    static void open(Args a) {
         File base = new File(a.base);
         String refusedMsg = "WAL store " + base + " is locked by another process";
         try {
@@ -92,6 +97,12 @@ public final class Wal3LockProbe {
                 // still OK: the open succeeded
             }
             System.out.println("OK");
+        } catch (BadInvocation bad) {
+            // A BAD INVOCATION IS NOT A LOCK VERDICT. The catch-all below would print it as
+            // `OTHER:…:mode must be rw|ro, got …` on stdout and exit 0, and lock_matrix.py would
+            // record a cell of the matrix that was never measured. Rethrown so main's handler
+            // exits 2, which is what the protocol reserves for it.
+            throw bad;
         } catch (DBException e) {
             String msg = String.valueOf(e.getMessage());
             if (refusedMsg.equals(msg)) {
@@ -104,6 +115,13 @@ public final class Wal3LockProbe {
         }
     }
 
+    /**
+     * The mode is validated by {@link Args#parse} too, so this arm is defence in depth rather than
+     * the only gate — but it is a REACHABLE arm for any future caller that builds an {@code Args}
+     * another way, and {@code open}'s catch-all would otherwise print it as an {@code OTHER:}
+     * verdict on stdout and exit 0. {@code open} rethrows it for that reason; a bad invocation must
+     * never masquerade as a measured cell of the lock matrix.
+     */
     private static StoreWAL openStore(File base, String mode) {
         if ("ro".equals(mode)) {
             return StoreWAL.openReadOnly(base);
@@ -114,7 +132,14 @@ public final class Wal3LockProbe {
         throw new BadInvocation("mode must be rw|ro, got " + mode);
     }
 
-    /** Parsed invocation; env wins, argv fills gaps. */
+    /**
+     * Parsed invocation.
+     *
+     * <p><b>argv wins.</b> Env supplies the defaults and each recognised flag OVERWRITES what the
+     * env put there — {@code --mode ro} beside {@code MAPDB_LOCK_PROBE_MODE=rw} yields {@code ro}.
+     * The doc said the reverse until review r1 read the loop; a protocol note that contradicts the
+     * code is worse than none, because the harness on the other side is written from it.
+     */
     static final class Args {
         final String cmd;
         final String base;
