@@ -85,13 +85,7 @@ public class XFixtureDirectTest {
                 }
                 accepts++;
             } else if ("reject".equals(e.verdict)) {
-                try {
-                    StoreDirect s = new StoreDirect(target);
-                    s.close();
-                    fail(e.fixtureId + ": expected DBException.DataCorruption, but opened");
-                } catch (DBException.DataCorruption expected) {
-                    // contract: the shared malformed image is refused by every engine
-                }
+                assertRefusedOnOpen(e.fixtureId, () -> new StoreDirect(target));
                 rejects++;
             } else {
                 fail("unknown verdict " + e.verdict);
@@ -106,5 +100,66 @@ public class XFixtureDirectTest {
         }
         assertEquals("missing a StoreDirect accept cell (3 writers × this reader)", 3, accepts);
         assertEquals("missing a StoreDirect reject cell (4 shared malformed images)", 4, rejects);
+    }
+
+    /** How a cell opens its store; anything the reject probe is allowed to grade. */
+    interface Opener { AutoCloseable open(); }
+
+    /**
+     * The reject probe: <b>only the OPEN is graded</b>.
+     *
+     * <p>The close used to sit inside the same {@code try}, so a {@code DataCorruption} thrown
+     * while CLOSING a store that had opened successfully was caught as "the store refused" and the
+     * cell went green on the opposite outcome (review r1). A malformed image that opens and then
+     * fails on the way out is not a refusal — it is an engine that accepted a file the contract
+     * says every engine must reject, which is the finding this harness exists to make.
+     *
+     * <p>A handle that did open is closed outside the graded region and its outcome is discarded,
+     * because the cell is already failing on the open and reporting the close would name the wrong
+     * event. {@link #the_reject_probe_grades_only_the_open} is the red.
+     */
+    static void assertRefusedOnOpen(String ctx, Opener opener) {
+        AutoCloseable opened;
+        try {
+            opened = opener.open();
+        } catch (DBException.DataCorruption expected) {
+            return;                 // contract: the shared malformed image is refused by every engine
+        }
+        try {
+            opened.close();
+        } catch (Exception whileFailingAnyway) {
+            // deliberately dropped; the fail() below is the finding
+        }
+        fail(ctx + ": expected DBException.DataCorruption, but opened");
+    }
+
+    /**
+     * The probe's own diagonal: refusing ON OPEN passes, and the two ways of NOT refusing on open
+     * both fail — including the one the corpus cannot produce, a store that opens and then throws
+     * the corruption verdict from {@code close()}.
+     *
+     * <p>That case is exactly what the old shape counted as a reject, and no fixture in the tree
+     * exhibits it, so a doctored opener is the only input that can see it. Restore the old
+     * arrangement (open and close inside one {@code try}) and the second case here goes green.
+     */
+    @Test public void the_reject_probe_grades_only_the_open() {
+        assertRefusedOnOpen("refused on open", () -> {
+            throw new DBException.DataCorruption("not a mapdb StoreDirect file (bad magic)");
+        });
+        refuses("a store that OPENED and threw the corruption verdict from close()",
+                () -> assertRefusedOnOpen("closes badly", () -> () -> {
+                    throw new DBException.DataCorruption("not a mapdb StoreDirect file (bad magic)");
+                }));
+        refuses("a store that opened and closed cleanly",
+                () -> assertRefusedOnOpen("opens fine", () -> () -> { }));
+    }
+
+    private static void refuses(String what, Runnable probe) {
+        try {
+            probe.run();
+        } catch (AssertionError expected) {
+            return;
+        }
+        fail("the reject probe accepted " + what);
     }
 }
