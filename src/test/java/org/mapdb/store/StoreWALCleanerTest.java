@@ -1063,13 +1063,21 @@ public class StoreWALCleanerTest {
      *
      * <p>The latch is armed through a hook, because a genuinely futile episode is not reachable from
      * this API — see {@code testArmFutility}. What is pinned here is the release rule.
+     *
+     * <p><b>Which arm released it is asserted, not assumed.</b> All three release rules are live on
+     * the same commit, and the delete that drops the target also grows the log a little; without
+     * the bounds below, a release attributable to growth or to staleness would read here as the
+     * target rule working. The staleness arm is excluded by construction (a re-emitted count of
+     * 1,000 against ~20 committed state changes), the growth arm by a bound on how far the log can
+     * have moved since arming.
      */
     @Test public void a_material_target_drop_releases_the_futility_latch() {
         final int recs = 20, size = 60_000;
+        final long segBytes = 128 << 10;
         File f = newFile();
         StoreWAL s = new StoreWAL(f);
         try {
-            s.setSegmentBytes(128 << 10);
+            s.setSegmentBytes(segBytes);
             s.setMinLogBytes(0);
             long[] r = new long[recs];
             for (int i = 0; i < recs; i++) r[i] = s.put(Fixtures.payload(i, 0, size), Fixtures.RAW);
@@ -1083,11 +1091,13 @@ public class StoreWALCleanerTest {
             assertTrue("the trigger must be live or a latch means nothing",
                     WalTestKit.logBytes(f) > s.testCleaningTarget());
 
-            // A large re-emitted count keeps the staleness rule out of this test: what is under
-            // test here is the TARGET rule, and `a_state_only_churn_releases_the_futility_latch`
-            // covers the other one.
+            // A large re-emitted count keeps the STALENESS rule out of this test: it releases once
+            // `futileRecords` state changes have been committed, and the traffic below is one
+            // update plus 19 deletes. What is under test here is the TARGET rule, and
+            // `a_state_only_churn_releases_the_futility_latch` covers the other one.
             s.testArmFutility(1_000);
             assertTrue("the hook must arm through the real path", s.cleaningExhausted());
+            long logAtArming = WalTestKit.logBytes(f), targetAtArming = s.testCleaningTarget();
 
             s.update(r[0], Fixtures.payload(0, 99, size), Fixtures.RAW);
             s.commit();
@@ -1096,7 +1106,29 @@ public class StoreWALCleanerTest {
 
             long before = WalTestKit.logBytes(f);
             for (int i = 1; i < recs; i++) s.delete(r[i], Fixtures.RAW);
-            s.commit();                                 // the log GREW; the store shrank by ~40%
+            s.commit();                                 // the log grew a little; the store shrank ~40%
+            // Which ARM released it: the sibling states its exclusions and this one did not, so
+            // "the target rule works" was being read off a commit that also grew the log (review
+            // r1). Both bounds are stated here.
+            //
+            // GROWTH out of reach. The rule is `logBytes >= logAtArming + cleaningTarget()`, so
+            // what must stay small is the growth SINCE ARMING — bounded by what the log held just
+            // before the releasing commit plus one segment, the most 19 delete entries can add to
+            // it. Bounding it that way rather than measuring after the commit is deliberate: a
+            // release lets cleaning run inside that same commit, so the log left behind is smaller
+            // than the one the rule compared and an after-the-fact measurement would pass however
+            // far the log had climbed. The threshold moves too — the delete just made the target
+            // smaller — so the smaller of the two is the one to clear.
+            long reachable = before - logAtArming + segBytes;
+            long threshold = Math.min(targetAtArming, s.testCleaningTarget());
+            assertTrue("the GROWTH rule must be out of reach: the log can have grown at most "
+                            + reachable + " since arming, against a threshold of " + threshold,
+                    reachable < threshold);
+            // …and the TARGET rule must be IN reach, which is the claim itself: a material drop is
+            // more than an eighth, and it is the release below that proves the latch saw it.
+            assertTrue("the target must have dropped materially: " + targetAtArming + " -> "
+                            + s.testCleaningTarget(),
+                    s.testCleaningTarget() <= targetAtArming - (targetAtArming >> 3));
             assertFalse("a delete makes the log reclaimable without the log moving: the latch must"
                             + " release on the target, not only on growth", s.cleaningExhausted());
 
