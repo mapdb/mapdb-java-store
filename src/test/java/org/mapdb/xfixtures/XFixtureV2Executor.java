@@ -532,8 +532,12 @@ final class XFixtureV2Executor {
     static final Pattern S9 = Pattern.compile(
             "WAL segment [\\s\\S]+?: section LSNs must be consecutive: -?\\d+ at offset \\d+ after -?\\d+");
 
+    // The PATH is opaque for the same reason the segment name is: `WalSegmentSet.java:218`
+    // interpolates `abs.getPath()`, and a Unix path may hold a colon OR a newline. `.+` was the
+    // no-newline defect a fourth time — review r1 confirmed the miss with a probe — so this group
+    // is `[\\s\\S]+` like R4_CHAIN/R4_SELF, and only the fixed tail may end it.
     static final Pattern N6 = Pattern.compile(
-            "v1 single-file WAL present at .+\\.wal: no migration to v2");
+            "v1 single-file WAL present at [\\s\\S]+\\.wal: no migration to v2");
 
     static final Pattern H5 = Pattern.compile(
             "WAL segment [\\s\\S]+?: unsupported WAL format version -?\\d+");
@@ -566,8 +570,16 @@ final class XFixtureV2Executor {
     static final Pattern S4_MIDLOG = Pattern.compile(
             "WAL segment [\\s\\S]+?: mid-log corruption: section body CRC mismatch at offset \\d+ but valid sections follow");
 
+    // R4-floor's middle clause is the WHOLE discrimination: `StoreWAL.java:812-815` picks between
+    // "the clean mark attests it begins at <lsn>" and "an unmarked log must begin at LSN 1", and
+    // which one it picks is the difference between a marked and an unmarked log. A `.+` there
+    // swallowed the clause and accepted any sentence at all between the two fixed halves (review
+    // r1 confirmed the false match), so the two disjuncts are spelled out. The SEGMENT NAME stays
+    // opaque; the clause does not, because the engine writes exactly these two.
     static final Pattern R4_FLOOR = Pattern.compile(
-            "WAL retained log begins at LSN -?\\d+ in [\\s\\S]+ but .+: sections below it are gone");
+            "WAL retained log begins at LSN -?\\d+ in [\\s\\S]+ but "
+                    + "(?:the clean mark attests it begins at -?\\d+|an unmarked log must begin at LSN 1)"
+                    + ": sections below it are gone");
 
     static final Pattern R4_CHAIN = Pattern.compile(
             "WAL segment [\\s\\S]+? states it begins at LSN -?\\d+ but [\\s\\S]+ accounts for LSNs up to -?\\d+: sections between them are gone");

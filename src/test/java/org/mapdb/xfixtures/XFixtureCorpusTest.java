@@ -208,7 +208,11 @@ public class XFixtureCorpusTest {
         assertEquals("the corpus carries no `bytes` row for java", 1, bytes);
         // C8f f1/f2: full reopen transport for every non-mutating reject arm with a predicate, plus
         // Q8's accept-side stability row — catalogue pin is 33 (was 4: Q8 + S2 pair + direct-magic).
-        assertEquals("the corpus carries no `reopen` row for java", 33, reopens);
+        // The message described the 0-reopen era until review r1 found it still saying so beside a
+        // pin of 33: a failure message that names the wrong situation is a wrong reading handed to
+        // whoever the pin fires on.
+        assertEquals("the java `reopen` rows addressed to cells that ran are not the catalogue's 33",
+                33, reopens);
     }
 
     // -------------------------------------------------------------- the §3.11 mutant
@@ -793,7 +797,7 @@ public class XFixtureCorpusTest {
                 "carries no `bytes` row for java");
         refusesSuite("a corpus with no java `reopen` row",
                 doctored(t -> dropRows(t, "reopen\tdiv-wal3-lsn-exhausted\tjava\trw\t")),
-                "carries no `reopen` row for java");
+                "`reopen` rows addressed to cells that ran");
         // Q8's rw cell removed COHERENTLY — its applies, expect, both posts and all three oracle
         // rows — so `applies == expect` still holds, no row is orphaned, the other four java cells
         // run clean, and the action pin is the first thing left that can notice.
@@ -998,19 +1002,65 @@ public class XFixtureCorpusTest {
                 }
             }
         }
-        // S8 disjuncts beyond cleanedThroughSeq=0 (logStart and body-length).
-        XFixtureV2Executor.assertFamily("S8 logStartLsn", "S8/K-bounds",
+        // ---- the second forms, on the SAME diagonal ---------------------------------
+        //
+        // Two of these families are a disjunction over production sites and one has two clauses,
+        // so the representative above exercises only one arm each. Until review r1 the other arms
+        // were asserted POSITIVELY and nothing else — S8's logStart and body-length forms, S4's
+        // mid-log form — which says the predicate accepts them, not that it reads their family:
+        // a predicate broadened until it matched everything would pass every one of those lines.
+        // Each extra sample now runs the whole column, accepted by its own family and refused by
+        // the other fourteen, exactly as the matrix does for the representatives.
+        final String[] extraOwners = {
+                "S8/K-bounds", "S8/K-bounds", "S4/mid-log", "R4-floor",
+        };
+        final Throwable[] extras = {
                 new DBException.DataCorruption(
                         "WAL segment x.wal.4: clean mark attests logStartLsn 0, which is not an "
-                                + "LSN at or below the mark's own 10"));
-        XFixtureV2Executor.assertFamily("S8 body length", "S8/K-bounds",
+                                + "LSN at or below the mark's own 10"),
                 new DBException.DataCorruption(
-                        "WAL segment x.wal.4: clean mark body is 8 bytes, not 16"));
-        // S4 mid-log (active) form beside the non-final form in the matrix.
-        XFixtureV2Executor.assertFamily("S4 mid-log active", "S4/mid-log",
+                        "WAL segment x.wal.4: clean mark body is 8 bytes, not 16"),
                 new DBException.DataCorruption(
                         "WAL segment x.wal.5: mid-log corruption: section body CRC mismatch at "
-                                + "offset 100 but valid sections follow"));
+                                + "offset 100 but valid sections follow"),
+                // R4-floor's UNMARKED clause; the matrix's representative carries the marked one.
+                new DBException.DataCorruption(
+                        "WAL retained log begins at LSN 3 in x.wal.0000000000000003 but an "
+                                + "unmarked log must begin at LSN 1: sections below it are gone"),
+        };
+        assertEquals(extraOwners.length, extras.length);
+        for (int j = 0; j < extras.length; j++) {
+            for (String family : families) {
+                String what = "extra[" + j + "] graded as " + family;
+                if (extraOwners[j].equals(family)) {
+                    XFixtureV2Executor.assertFamily(what, family, extras[j]);
+                } else {
+                    refusedFamily(what, family, extras[j]);
+                }
+            }
+        }
+        // R4-floor's middle clause is what distinguishes its two production disjuncts, and a `.+`
+        // there swallowed it — every one of these was accepted before review r1. The two fixed
+        // halves are not the refusal; the clause between them is.
+        refusedFamily("an R4-floor shape with a clause the engine never writes", "R4-floor",
+                new DBException.DataCorruption("WAL retained log begins at LSN 3 in x.wal.3 but "
+                        + "something else entirely: sections below it are gone"));
+        refusedFamily("an R4-floor shape whose marked clause lost its LSN", "R4-floor",
+                new DBException.DataCorruption("WAL retained log begins at LSN 3 in x.wal.3 but "
+                        + "the clean mark attests it begins at some other place: sections below it "
+                        + "are gone"));
+        refusedFamily("an R4-floor shape whose unmarked clause names a different floor", "R4-floor",
+                new DBException.DataCorruption("WAL retained log begins at LSN 3 in x.wal.3 but "
+                        + "an unmarked log must begin at LSN 2: sections below it are gone"));
+        // N6 interpolates a PATH (WalSegmentSet.java:218), and a Unix path may hold a newline just
+        // as a segment name may. `.` does not cross a line terminator: the fourth appearance of
+        // that defect, and this is the sample that sees it.
+        XFixtureV2Executor.assertFamily("an N6 path containing a newline", "N6",
+                new DBException.DataCorruption(
+                        "v1 single-file WAL present at /tmp/od\ndd/x.wal: no migration to v2"));
+        XFixtureV2Executor.assertFamily("an N6 path containing the delimiter", "N6",
+                new DBException.DataCorruption(
+                        "v1 single-file WAL present at /tmp/od: dd/x.wal: no migration to v2"));
         // K4 must not be accepted as S8 (neighbour on the same mark).
         refusedFamily("K4 presented as S8", "S8/K-bounds", samples[7]);
         refusedFamily("S8 presented as K4", "K4", samples[8]);
