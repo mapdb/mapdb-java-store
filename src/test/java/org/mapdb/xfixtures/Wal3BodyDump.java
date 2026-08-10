@@ -12,7 +12,9 @@ import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.TreeSet;
 import java.util.zip.GZIPInputStream;
 
@@ -41,10 +43,12 @@ import static org.mapdb.xfixtures.FixtureWriter.check;
  *
  * <p><b>It checks its own decode rather than trusting it.</b> Every record's content must be
  * {@code payload(id, len)} for the id recovered from its own first byte — the payload function is
- * invertible, so a mis-parsed entry stream produces bytes that do not fit it — and the set of
- * recids the entries mention must equal the set the manifest names. Without those, a decoder that
- * read the packed-long continuation bit the wrong way round would emit a self-consistent file
- * full of nonsense, and the first thing to notice would be C3r failing for the wrong reason.
+ * invertible, so a mis-parsed entry stream produces bytes that do not fit it — every APPEND's
+ * fragment must be that same payload continued at the offset its base image's length implies
+ * ({@link #checkAppendPayload}), and the set of recids the entries mention must equal the set the
+ * manifest names. Without those, a decoder that read the packed-long continuation bit the wrong
+ * way round would emit a self-consistent file full of nonsense, and the first thing to notice
+ * would be C3r failing for the wrong reason.
  *
  * <pre>
  *   mvn -q -o test-compile
@@ -127,11 +131,15 @@ public final class Wal3BodyDump {
         StringBuilder sb = new StringBuilder(HEADER);
         String bundle = null;
         TreeSet<Long> seenRecids = new TreeSet<>();
+        Map<Long, byte[]> liveImage = new HashMap<>();
+        appendsWitnessed = 0;
+        appendsProgressionOnly = 0;
         for (XFixtureManifest.V2.FileRow f : files) {
             if (!f.fixtureId.equals(bundle)) {
                 if (bundle != null) checkRecidsAgainstManifest(m, bundle, seenRecids);
                 bundle = f.fixtureId;
                 seenRecids = new TreeSet<>();
+                liveImage.clear();      // recids are per bundle; so is the image they name
             }
             String where = f.fixtureId + "/" + f.relName;
             Wal3Decode.Segment seg = Wal3Decode.decode(gunzip(f), where);
@@ -161,13 +169,15 @@ public final class Wal3BodyDump {
                                 at + ": append content length " + (e.content == null ? -1
                                         : e.content.length) + " != len " + e.appendLen);
                         row(sb, "ent", f.fixtureId, f.relName, s.index, i, e.kind(), e.recid,
-                                e.delta, e.baseLsn, e.appendLen, appendContentSha(e, at));
+                                e.delta, e.baseLsn, e.appendLen,
+                                appendContentSha(e, at, liveImage.get(e.recid)));
                     } else {
                         row(sb, "ent", f.fixtureId, f.relName, s.index, i, e.kind(), e.recid,
                                 e.cap < 0 ? "-" : e.cap,
                                 e.lenPlus < 0 ? "-" : e.lenPlus,
                                 contentSha(e, at));
                     }
+                    trackLiveImage(liveImage, e);
                 }
             }
         }
@@ -206,18 +216,95 @@ public final class Wal3BodyDump {
     }
 
     /**
-     * APPEND content column: sha of the wire payload of length {@code appendLen}.
-     * Empty payload uses the empty-string sha (not {@code -}, which is RECORD-null only).
-     * Payload-language invertibility is checked only when the bytes form a full
-     * {@code payload(id, len)} image — an append fragment alone usually does not.
+     * APPEND content column: sha of the wire payload of length {@code appendLen}, witnessed
+     * against the image the append extends.
+     *
+     * <p>Empty payload uses the empty-string sha (not {@code -}, which is RECORD-null only).
+     *
+     * <p><b>The witness.</b> C9a shipped this column graded only by its own emitter — the review's
+     * "no independent witness", and the same hole {@link #checkCap} and {@link #checkMark} were
+     * built to close. An append fragment is not a whole {@code payload(id, len)} image, so
+     * {@link #contentSha}'s invertibility check cannot be reused verbatim; but
+     * {@code payload(id, len)[i] = (i * 131 + id) & 0xff} does not depend on {@code len}, so the
+     * bytes appended to a record whose image this dump has already decoded must equal
+     * {@code payload(id, base.length + fragment.length)} from {@code base.length} on — id
+     * recovered from the base's own first byte, offset from the base's own length. That is a
+     * closed-form prediction the emitter cannot satisfy by agreeing with itself: an emitter that
+     * printed the sha of the wrong bytes, or a decoder that took the fragment from the wrong
+     * offset in the entry stream, fails it.
+     *
+     * <p>The corpus's one append is the tail bundle's ({@code Wal3GoldenWriter}: put
+     * {@code payload(106, 16)}, commit, then append {@code payload(106, 24)[16..24)}), so the
+     * strong branch is the one that runs — {@link #appendsProgressionOnly} is what says so, and
+     * the conformance suite asserts it is zero.
      */
-    private static String appendContentSha(Wal3Decode.Entry e, String where) {
+    private static String appendContentSha(Wal3Decode.Entry e, String where, byte[] base) {
         check(e.isAppend(), where + ": appendContentSha on non-APPEND");
         byte[] c = e.content;
         check(c != null && c.length == e.appendLen,
                 where + ": append content is " + (c == null ? -1 : c.length)
                         + " bytes but len says " + e.appendLen);
+        checkAppendPayload(base, c, where);
         return FixtureWriter.sha256Hex(c);
+    }
+
+    /** Appends witnessed against a decoded base image, and appends that had no base to check. */
+    static int appendsWitnessed, appendsProgressionOnly;
+
+    /**
+     * The APPEND content witness, split out so it can be shown a wrong fragment.
+     *
+     * <p>With a base image: an exact prediction (see {@link #appendContentSha}).
+     *
+     * <p>Without one — a legal case the corpus does not currently contain, an append whose base
+     * record was written before the retained log begins, or a base of length zero, where the id
+     * cannot be recovered — all that remains is the payload language's STEP: consecutive bytes of
+     * any {@code payload(id, n)} differ by 131 mod 256, whatever id and offset they came from.
+     * That is strictly weaker and is counted separately rather than being allowed to look like the
+     * real witness.
+     */
+    static void checkAppendPayload(byte[] base, byte[] fragment, String where) {
+        if (base != null && base.length > 0) {
+            int id = base[0] & 0xFF;
+            byte[] full = FixtureWriter.payload(id, base.length + fragment.length);
+            check(Arrays.equals(base, Arrays.copyOf(full, base.length)),
+                    where + ": the image this append extends is not payload(" + id + ", "
+                            + base.length + "), so the fragment cannot be predicted from it");
+            check(Arrays.equals(fragment, Arrays.copyOfRange(full, base.length, full.length)),
+                    where + ": the " + fragment.length + " appended bytes are not payload(" + id
+                            + ") continued at offset " + base.length + " — this append was not "
+                            + "framed the way the writer wrote it");
+            appendsWitnessed++;
+            return;
+        }
+        for (int i = 1; i < fragment.length; i++)
+            check((fragment[i] & 0xFF) == ((fragment[i - 1] + 131) & 0xFF),
+                    where + ": byte " + i + " of the append does not continue the payload "
+                            + "language (step 131 mod 256) — no base image was decoded for this "
+                            + "recid, so this is all that can be said about it");
+        appendsProgressionOnly++;
+    }
+
+    /**
+     * The per-recid image the next APPEND is predicted from, maintained exactly as replay does:
+     * a RECORD with content replaces it, an APPEND extends it, and everything else (null content,
+     * DELETE, PREALLOC) leaves the recid with no image to extend.
+     */
+    private static void trackLiveImage(Map<Long, byte[]> live, Wal3Decode.Entry e) {
+        if (e.isAppend()) {
+            byte[] base = live.get(e.recid);
+            if (base == null || e.content == null) {
+                live.remove(e.recid);
+                return;
+            }
+            byte[] grown = Arrays.copyOf(base, base.length + e.content.length);
+            System.arraycopy(e.content, 0, grown, base.length, e.content.length);
+            live.put(e.recid, grown);
+        } else if (e.isRecord() && e.lenPlus > 0) {
+            live.put(e.recid, e.content);
+        } else {
+            live.remove(e.recid);
+        }
     }
 
     /**

@@ -10,6 +10,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
@@ -17,6 +18,7 @@ import java.util.TreeSet;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 /**
  * Cross-port conformance harness: runs every {@code engine == java} cell of the checked-in
@@ -283,6 +285,59 @@ public class XFixtureConformanceTest {
         // C9a / O1: at least one APPEND ent row so the four-field body oracle is not vacuous.
         assertTrue(Wal3BodyDump.FILE_NAME + " pins no APPEND entry",
                 want.contains("\tAPPEND\t"));
+        // …and its content column was graded by the STRONG witness, not the fallback. The two
+        // branches produce the same file, so without this the corpus could drift into the
+        // progression-only case and the column would quietly stop being predicted.
+        assertTrue("no APPEND was witnessed against a decoded base image",
+                Wal3BodyDump.appendsWitnessed > 0);
+        assertEquals("an APPEND fell back to the progression-only check", 0,
+                Wal3BodyDump.appendsProgressionOnly);
+    }
+
+    /**
+     * The APPEND content witness, shown the wrong bytes.
+     *
+     * <p>{@link Wal3BodyDump#checkAppendPayload} is the independent oracle C9a's content column
+     * lacked, and the corpus contains exactly one accepted append — which the emitter and the
+     * checked-in golden file agree about by construction. So the red for the witness cannot come
+     * from the corpus: it comes from predictions the writer never made.
+     */
+    @Test public void the_append_content_witness_predicts_the_fragment() {
+        byte[] base = FixtureWriter.payload(106, 16);
+        byte[] full = FixtureWriter.payload(106, 24);
+        byte[] good = Arrays.copyOfRange(full, 16, 24);
+        // The corpus's own case: payload(106, 24) put as 16 bytes then appended to 24.
+        Wal3BodyDump.checkAppendPayload(base, good, "control");
+        // Same payload language, WRONG OFFSET — the fragment the writer would have produced had
+        // the base been one byte shorter. A decoder that took the fragment from the wrong place
+        // in the entry stream lands here.
+        refusedFragment("a fragment continued from the wrong offset", base,
+                Arrays.copyOfRange(FixtureWriter.payload(106, 25), 17, 25));
+        // The right offset in a DIFFERENT payload: the bytes are a legal payload slice, so the
+        // progression fallback would accept them. Only the base-relative prediction refuses.
+        refusedFragment("a fragment of another record's payload", base,
+                Arrays.copyOfRange(FixtureWriter.payload(107, 24), 16, 24));
+        refusedFragment("one flipped byte", base, flipFirst(good));
+        refusedFragment("a base that is not a payload image at all",
+                new byte[]{1, 2, 3, 4}, good);
+        // No base image: all that can be said is the step, and it must still be said.
+        Wal3BodyDump.checkAppendPayload(null, good, "no base, genuine slice");
+        refusedFragment("bytes that are no payload slice at all", null, new byte[]{0, 1, 2, 3});
+    }
+
+    private static byte[] flipFirst(byte[] b) {
+        byte[] out = b.clone();
+        out[0] ^= 1;
+        return out;
+    }
+
+    private static void refusedFragment(String what, byte[] base, byte[] fragment) {
+        try {
+            Wal3BodyDump.checkAppendPayload(base, fragment, "probe");
+        } catch (AssertionError expected) {
+            return;
+        }
+        fail("the APPEND content witness accepted " + what);
     }
 
     // ---------- the version gate (C7j) ----------
