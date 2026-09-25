@@ -321,10 +321,10 @@ final class WalSegmentSet implements java.io.Closeable {
      * records {@code maxObservedSeq} over ALL names — <b>including the residue it is about to
      * remove</b> (W6), so a stale directory entry can never alias a segment a later create reuses.
      *
-     * <p>The asymmetry in table H is the whole point: a torn create produces an invalid
-     * {@code headerCrc} with overwhelming probability, so an invalid header on the
-     * <b>highest</b> name is an ordinary crash artifact, while the same bytes anywhere else are
-     * corruption — something above it exists, so its creation completed once.
+     * <p>A torn create can leave at most {@link #SEG_HDR} bytes: W2 forces the complete header
+     * before any section is appended. A larger file with an invalid header may hold acknowledged
+     * commits, so it is corruption even at the highest name. For a header-sized or shorter file,
+     * only the highest name can be residue; a successor proves the earlier create completed.
      */
     private void classify(List<long[]> found) throws IOException {
         long maxObserved = 0;
@@ -361,11 +361,12 @@ final class WalSegmentSet implements java.io.Closeable {
                     // copied file, never a torn create — corruption regardless of position.
                     throw new DBException.DataCorruption("WAL segment " + file.getName()
                             + ": " + fault.substring(1));
-                } else if (seq == highestSeq) {
-                    residue.add(seq);                        // H1-H4, highest: create crashed
+                } else if (seq == highestSeq && len <= SEG_HDR) {
+                    residue.add(seq);                        // H1-H4, highest and header-only
                 } else {
                     throw new DBException.DataCorruption("WAL segment " + file.getName()
-                            + ": " + fault + " (not the highest segment, so its create completed)");
+                            + ": " + fault + " (segment has " + len
+                            + " bytes or is not the highest, so it is not torn-create residue)");
                 }
             } finally {
                 try {
@@ -385,7 +386,8 @@ final class WalSegmentSet implements java.io.Closeable {
 
     /**
      * Reads and validates one segment header. Returns {@code null} when it is valid, a plain
-     * message for the <em>torn create</em> shapes (H1-H4, residue when highest), or a message
+     * message for the <em>torn create</em> shapes (H1-H4, residue only when highest and
+     * no larger than the header), or a message
      * prefixed {@code "!"} for the shapes that are corruption wherever they appear (H5-H7).
      */
     private static String readHeader(FileChannel ch, long len, byte[] into, long nameSeq) throws IOException {

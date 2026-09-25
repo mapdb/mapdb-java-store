@@ -648,10 +648,13 @@ public class StoreWAL implements StoreDelta, StoreTx {
                 if (!hdrOk) {                                              // S3
                     if (!isActive) return hold(seg, cleanedThroughSeq,
                             "section header damaged at offset " + pos + " in a non-final segment");
-                    if (bodyLen >= 0 && bodyLen <= len - bodyStart
-                            && anyValidSectionFrom(seg, bodyStart + bodyLen, len, lastLsn, true))
+                    // bodyLen is inside the damaged header. It cannot locate the next section:
+                    // a flipped length can skip every later commit. Search the remainder at
+                    // each byte offset and refuse if a successor is found or search work is
+                    // exhausted by forged CRC-valid candidates.
+                    if (laterSectionOrScanLimit(seg, pos + 1, len, lastLsn))
                         return hold(seg, cleanedThroughSeq, "mid-log corruption: section header damaged"
-                                + " at offset " + pos + " but valid sections follow (not a torn tail)");
+                                + " at offset " + pos + " (later section or scan limit)");
                     return cleanedThroughSeq;                              // torn tail
                 }
                 if (bodyLen < 0 || bodyLen > len - bodyStart) {            // S5
@@ -663,7 +666,7 @@ public class StoreWAL implements StoreDelta, StoreTx {
                     // bodyEnd is TRUSTED (hdrCrc valid): anything valid after it proves bit rot
                     if (!isActive) return hold(seg, cleanedThroughSeq,
                             "section body CRC mismatch at offset " + pos + " in a non-final segment");
-                    if (anyValidSectionFrom(seg, bodyStart + bodyLen, len, lastLsn, false))
+                    if (anyValidSectionFrom(seg, bodyStart + bodyLen, len, lastLsn))
                         return hold(seg, cleanedThroughSeq, "mid-log corruption: section body CRC"
                                 + " mismatch at offset " + pos + " but valid sections follow");
                     return cleanedThroughSeq;                              // torn tail
@@ -1076,19 +1079,16 @@ public class StoreWAL implements StoreDelta, StoreTx {
     }
 
     /**
-     * True when {@code [from, limit)} of this segment holds at least one fully valid section,
-     * proving that durable committed sections follow a bad one (=> corruption, not a torn tail).
-     * With {@code exactNext} (untrusted anchor: the damaged section's own bodyLen) the candidate
-     * must carry EXACTLY the next expected LSN ({@code lastLsn + 2} — the damaged section was
-     * {@code lastLsn + 1}); otherwise (trusted anchor: hdrCrc-sealed bodyEnd, so a real section
-     * boundary) any strictly future LSN counts. Both reject "embedded fake" byte patterns from
-     * user data containing copies of EARLIER sections: stale copies carry old LSNs, and under
-     * the §6.2 CRC domain a copied section also fails its CRCs at any other offset.
+     * True when {@code [from, limit)} of this segment holds at least one CRC-valid section,
+     * indicating that committed sections follow a bad one (=> refuse as corruption).
+     * This is called only at a trusted anchor: hdrCrc seals the damaged section's bodyLen,
+     * so its bodyEnd is a real section boundary. A strictly future LSN counts. Copied earlier
+     * sections carry stale LSNs, and copies at other offsets fail the offset-bound CRCs.
      *
      * <p>Never crosses a segment boundary — {@code limit} is this segment's length.
      */
-    private boolean anyValidSectionFrom(Segment seg, long from, long limit, long lastLsn,
-                                        boolean exactNext) throws IOException {
+    private boolean anyValidSectionFrom(Segment seg, long from, long limit, long lastLsn)
+            throws IOException {
         long pos = from;
         try {
             ByteBuffer hdr = ByteBuffer.allocate(SEC_HDR);
@@ -1104,13 +1104,55 @@ public class StoreWAL implements StoreDelta, StoreTx {
                 if ((int) hcrc.getValue() != hdr.getInt(17) || !validTag(tag)
                         || bodyLen < 0 || bodyLen > limit - bodyStart)
                     return false;
-                boolean lsnOk = exactNext ? lsn == lastLsn + 2 : lsn > lastLsn + 1;
-                if (lsnOk && bodyCrc(seg, pos, bodyStart, bodyStart + bodyLen) == hdr.getInt(21))
+                if (lsn > lastLsn + 1
+                        && bodyCrc(seg, pos, bodyStart, bodyStart + bodyLen) == hdr.getInt(21))
                     return true;
                 pos = bodyStart + bodyLen;
             }
         } catch (TornTail t) {
             // ran off the end: nothing valid there
+        }
+        return false;
+    }
+
+    /**
+     * S3's untrusted-anchor lookahead. Scan fixed-size windows so a large damaged tail does not
+     * issue one read per byte. A candidate must carry the next-after-damaged LSN and both CRCs at
+     * its actual offset. CRC32 can be deliberately forged, so a match is reason to REFUSE, not
+     * proof that the bytes came from the writer. Header-valid candidates with bad body CRC can
+     * demand overlapping body reads; cap their aggregate body bytes at the searched length and
+     * refuse when that budget runs out. Thus adversarial input cannot force quadratic work or
+     * make a budget exhaustion silently truncate committed data.
+     */
+    private boolean laterSectionOrScanLimit(Segment seg, long from, long limit, long lastLsn)
+            throws IOException {
+        final int windowSize = 64 * 1024;
+        byte[] window = new byte[windowSize];
+        long bodyBudget = limit - from;
+        long pos = from;
+        while (limit - pos >= SEC_HDR) {
+            int count = (int) Math.min(windowSize, limit - pos);
+            ByteBuffer bytes = ByteBuffer.wrap(window, 0, count).slice();
+            readFullyAt(seg.channel(), bytes, pos);
+            int candidates = count - SEC_HDR + 1;
+            for (int i = 0; i < candidates; i++) {
+                int tag = window[i] & 0xFF;
+                if (!validTag(tag) || WalSegmentSet.be64(window, i + 1) != lastLsn + 2)
+                    continue;
+                long bodyLen = WalSegmentSet.be64(window, i + 9);
+                long sectionPos = pos + i;
+                long bodyStart = sectionPos + SEC_HDR;
+                if (bodyLen < 0 || bodyLen > limit - bodyStart) continue;
+                CRC32 hcrc = new CRC32();
+                seg.crcDomain(hcrc, sectionPos);
+                hcrc.update(window, i, SEC_HDR_CRC_LEN);
+                if ((int) hcrc.getValue() != WalSegmentSet.be32(window, i + 17)) continue;
+                if (bodyLen > bodyBudget) return true; // bounded work; fail closed
+                bodyBudget -= bodyLen;
+                if (bodyCrc(seg, sectionPos, bodyStart, bodyStart + bodyLen)
+                        == WalSegmentSet.be32(window, i + 21)) return true;
+            }
+            pos += candidates; // retain the last SEC_HDR-1 bytes for candidates across windows
         }
         return false;
     }

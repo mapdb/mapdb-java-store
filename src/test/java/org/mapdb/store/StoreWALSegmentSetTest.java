@@ -294,6 +294,137 @@ public class StoreWALSegmentSetTest {
         }
     }
 
+    /** A segment containing a committed section cannot be residue from a torn header create. */
+    @Test public void damaged_header_on_a_nonempty_highest_segment_refuses_without_unlinking()
+            throws IOException {
+        File f = newFile("h3-active-rot");
+        writeSegment(f, 1, put(1, 1, Fixtures.payload(1, 1, 8)));
+        writeSegment(f, 2, put(2, 2, Fixtures.payload(2, 1, 8)));
+        File active = WalTestKit.segment(f, 2);
+        byte[] damaged = WalTestKit.read(active);
+        assertTrue(damaged.length > WalTestKit.SEG_HDR);
+        damaged[30] ^= 1; // firstLsn bit rot invalidates the segment header CRC
+        WalTestKit.write(active, damaged);
+        byte[] lowerBefore = WalTestKit.read(WalTestKit.segment(f, 1));
+        try {
+            new StoreWAL(f).close();
+            fail("expected DataCorruption for a damaged active segment containing commits");
+        } catch (DBException.DataCorruption expected) {
+            assertTrue(expected.getMessage(), expected.getMessage().contains("header CRC"));
+        }
+        assertArrayEquals("damaged active segment must be preserved", damaged, WalTestKit.read(active));
+        try {
+            StoreWAL.openReadOnly(f).close();
+            fail("read-only open must also reject a damaged active segment");
+        } catch (DBException.DataCorruption expected) {
+            assertTrue(expected.getMessage(), expected.getMessage().contains("header CRC"));
+        }
+        assertArrayEquals("read-only refusal must preserve the active segment", damaged,
+                WalTestKit.read(active));
+        assertArrayEquals("older commits must be preserved", lowerBefore,
+                WalTestKit.read(WalTestKit.segment(f, 1)));
+    }
+
+    /** H4 is also unsafe to discard when the file extends past its header. */
+    @Test public void crc_valid_wrong_magic_on_nonempty_highest_segment_refuses() throws IOException {
+        File f = newFile("h4-active-rot");
+        writeSegment(f, 1, put(1, 1, Fixtures.payload(1, 1, 8)));
+        File active = WalTestKit.segment(f, 1);
+        byte[] damaged = WalTestKit.read(active);
+        damaged[0] ^= 1;
+        byte[] header = java.util.Arrays.copyOf(damaged, WalTestKit.SEG_HDR);
+        WalTestKit.resealSegmentHeader(header);
+        System.arraycopy(header, 0, damaged, 0, header.length);
+        WalTestKit.write(active, damaged);
+        try {
+            new StoreWAL(f).close();
+            fail("expected DataCorruption for a nonempty segment with bad magic");
+        } catch (DBException.DataCorruption expected) {
+            assertTrue(expected.getMessage(), expected.getMessage().contains("not a mapdb"));
+        }
+        assertArrayEquals(damaged, WalTestKit.read(active));
+    }
+
+    /** A complete but invalid 36-byte header is still create-crash residue. */
+    @Test public void damaged_header_only_on_the_highest_segment_is_residue() throws IOException {
+        File f = newFile("h3-header-only");
+        writeSegment(f, 1, put(1, 1, Fixtures.payload(1, 1, 8)));
+        byte[] bad = WalTestKit.segmentHeader(2);
+        bad[30] ^= 1;
+        WalTestKit.write(WalTestKit.segment(f, 2), bad);
+        try (StoreWAL s = new StoreWAL(f)) {
+            assertEquals("header-only residue removed", 1, WalTestKit.segments(f).length);
+            assertNotNull(s.get(1, Fixtures.RAW));
+        }
+    }
+
+    /** S3: bodyLen bit rot must not hide a later committed section from the lookahead. */
+    @Test public void damaged_body_length_before_later_commits_refuses_without_truncating()
+            throws IOException {
+        File f = newFile("s3-bodylen-rot");
+        writeSegment(f, 1, put(1, 1, Fixtures.payload(1, 1, 8)),
+                put(2, 2, Fixtures.payload(2, 1, 8)),
+                put(3, 3, Fixtures.payload(3, 1, 8)));
+        File active = WalTestKit.segment(f, 1);
+        byte[] damaged = WalTestKit.read(active);
+        damaged[WalTestKit.SEG_HDR + 16] ^= 1; // low byte of first section bodyLen
+        WalTestKit.write(active, damaged);
+        try {
+            new StoreWAL(f).close();
+            fail("expected DataCorruption for bodyLen rot before committed sections");
+        } catch (DBException.DataCorruption expected) {
+            assertTrue(expected.getMessage(), expected.getMessage().contains("mid-log corruption"));
+        }
+        assertArrayEquals("refused open must not truncate the active segment", damaged,
+                WalTestKit.read(active));
+    }
+
+    /** The successor's header begins across the lookahead's 64 KiB window boundary. */
+    @Test public void body_length_rot_finds_a_successor_across_scan_windows() throws IOException {
+        File f = newFile("s3-window");
+        int extra = 65_500;
+        byte[] image = segmentImage(1, put(1, 1, Fixtures.payload(1, 1, extra)),
+                put(2, 2, Fixtures.payload(2, 1, 8)));
+        int target = WalTestKit.SEG_HDR + 1 + 64 * 1024 - 12;
+        extra += target - WalTestKit.sectionOffset(image, 1);
+        image = segmentImage(1, put(1, 1, Fixtures.payload(1, 1, extra)),
+                put(2, 2, Fixtures.payload(2, 1, 8)));
+        assertEquals(target, WalTestKit.sectionOffset(image, 1));
+        image[WalTestKit.SEG_HDR + 16] ^= 1;
+        File active = WalTestKit.segment(f, 1);
+        WalTestKit.write(active, image);
+        try {
+            new StoreWAL(f).close();
+            fail("expected DataCorruption for later commit across a scan window");
+        } catch (DBException.DataCorruption expected) {
+            assertTrue(expected.getMessage(), expected.getMessage().contains("mid-log corruption"));
+        }
+        assertArrayEquals(image, WalTestKit.read(active));
+    }
+
+    /** Forged candidate headers can demand overlapping body reads; exhausting the budget refuses. */
+    @Test public void body_length_lookahead_budget_exhaustion_refuses_without_truncating()
+            throws IOException {
+        File f = newFile("s3-budget");
+        byte[] image = segmentImage(1, put(1, 1, Fixtures.payload(1, 1, 130_000)));
+        byte[] header = java.util.Arrays.copyOf(image, WalTestKit.SEG_HDR);
+        for (int offset : new int[]{128, 256}) {
+            byte[] candidate = WalTestKit.section(header, offset, 'S', 2, new byte[100_000]);
+            candidate[21] ^= 1; // valid header, deliberately invalid body CRC
+            System.arraycopy(candidate, 0, image, offset, WalTestKit.SEC_HDR);
+        }
+        image[WalTestKit.SEG_HDR + 16] ^= 1; // damaged first section header
+        File active = WalTestKit.segment(f, 1);
+        WalTestKit.write(active, image);
+        try {
+            new StoreWAL(f).close();
+            fail("expected fail-closed refusal on lookahead work limit");
+        } catch (DBException.DataCorruption expected) {
+            assertTrue(expected.getMessage(), expected.getMessage().contains("scan limit"));
+        }
+        assertArrayEquals(image, WalTestKit.read(active));
+    }
+
     /**
      * H3, non-highest. The same bytes below the top are corruption, not residue: create-crash
      * residue is by construction always highest, because nothing above it exists yet.
