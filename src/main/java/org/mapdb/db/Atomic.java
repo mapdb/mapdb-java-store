@@ -1,5 +1,7 @@
 package org.mapdb.db;
 
+import java.util.concurrent.locks.ReentrantReadWriteLock;
+import org.mapdb.DBException;
 import org.mapdb.ser.Serializer;
 import org.mapdb.ser.Serializers;
 import org.mapdb.store.Store;
@@ -12,27 +14,57 @@ import org.mapdb.store.Store;
  * the read-modify-write helpers ({@code incrementAndGet}, {@code getAndAdd}, …)
  * are CAS loops, so they are correct under concurrent DB access as long as the
  * store is thread-safe.
+ *
+ * <p><b>Handle lifetime.</b> A handle obtained from a {@link DB} maker is invalidated
+ * when the owning DB {@linkplain DB#delete(String) deletes} the atomic,
+ * {@linkplain DB#rollback() rolls back}, or {@linkplain DB#close() closes}; every
+ * later operation on it throws {@link DBException.StoreClosed}. Without that, a stale
+ * handle keeps a recid the store may already have reused for another collection and
+ * would silently read and overwrite that collection's record. Handles constructed
+ * directly from a store and recid are not tracked and carry no such protection.
  */
 public final class Atomic {
 
     private Atomic() {}
+
+    static final java.lang.String HANDLE_CLOSED =
+            "atomic handle was invalidated by DB delete, rollback or close";
 
     /** Persistent {@code long}. */
     public static final class Long extends Number {
         private static final long serialVersionUID = 1L;
         private final Store store;
         private final long recid;
+        /**
+         * Guards {@code closed}: operations hold the read side across the open check and
+         * the store call, so {@link #closeHandle()} (write side) both invalidates the handle
+         * and waits for in-flight operations to finish before the DB frees or rewinds the
+         * record. Operations never take the DB lock, so this is the only thing that keeps a
+         * write that already passed the check from landing on a reused recid.
+         */
+        private final ReentrantReadWriteLock handleLock = new ReentrantReadWriteLock();
+        private volatile boolean closed;
+
+        /** Invalidates this handle and drains in-flight operations; the owning DB calls it. */
+        void closeHandle() {
+            handleLock.writeLock().lock();
+            try { closed = true; } finally { handleLock.writeLock().unlock(); }
+        }
+
+        private void checkOpen() { if (closed) throw new DBException.StoreClosed(HANDLE_CLOSED); }
 
         public Long(Store store, long recid) { this.store = store; this.recid = recid; }
 
         public long getRecid() { return recid; }
 
-        public long get() { return store.get(recid, Serializers.LONG); }
+        public long get() { handleLock.readLock().lock(); try { checkOpen(); return store.get(recid, Serializers.LONG); } finally { handleLock.readLock().unlock(); } }
 
-        public void set(long newValue) { store.update(recid, newValue, Serializers.LONG); }
+        public void set(long newValue) { handleLock.readLock().lock(); try { checkOpen(); store.update(recid, newValue, Serializers.LONG); } finally { handleLock.readLock().unlock(); } }
 
         public boolean compareAndSet(long expect, long update) {
-            return store.compareAndSwap(recid, expect, update, Serializers.LONG);
+            handleLock.readLock().lock();
+            try { checkOpen(); return store.compareAndSwap(recid, expect, update, Serializers.LONG); }
+            finally { handleLock.readLock().unlock(); }
         }
 
         public long getAndSet(long newValue) {
@@ -68,17 +100,36 @@ public final class Atomic {
         private static final long serialVersionUID = 1L;
         private final Store store;
         private final long recid;
+        /**
+         * Guards {@code closed}: operations hold the read side across the open check and
+         * the store call, so {@link #closeHandle()} (write side) both invalidates the handle
+         * and waits for in-flight operations to finish before the DB frees or rewinds the
+         * record. Operations never take the DB lock, so this is the only thing that keeps a
+         * write that already passed the check from landing on a reused recid.
+         */
+        private final ReentrantReadWriteLock handleLock = new ReentrantReadWriteLock();
+        private volatile boolean closed;
+
+        /** Invalidates this handle and drains in-flight operations; the owning DB calls it. */
+        void closeHandle() {
+            handleLock.writeLock().lock();
+            try { closed = true; } finally { handleLock.writeLock().unlock(); }
+        }
+
+        private void checkOpen() { if (closed) throw new DBException.StoreClosed(HANDLE_CLOSED); }
 
         public Integer(Store store, long recid) { this.store = store; this.recid = recid; }
 
         public long getRecid() { return recid; }
 
-        public int get() { return store.get(recid, Serializers.INTEGER); }
+        public int get() { handleLock.readLock().lock(); try { checkOpen(); return store.get(recid, Serializers.INTEGER); } finally { handleLock.readLock().unlock(); } }
 
-        public void set(int newValue) { store.update(recid, newValue, Serializers.INTEGER); }
+        public void set(int newValue) { handleLock.readLock().lock(); try { checkOpen(); store.update(recid, newValue, Serializers.INTEGER); } finally { handleLock.readLock().unlock(); } }
 
         public boolean compareAndSet(int expect, int update) {
-            return store.compareAndSwap(recid, expect, update, Serializers.INTEGER);
+            handleLock.readLock().lock();
+            try { checkOpen(); return store.compareAndSwap(recid, expect, update, Serializers.INTEGER); }
+            finally { handleLock.readLock().unlock(); }
         }
 
         public int getAndSet(int newValue) {
@@ -113,17 +164,36 @@ public final class Atomic {
     public static final class Boolean {
         private final Store store;
         private final long recid;
+        /**
+         * Guards {@code closed}: operations hold the read side across the open check and
+         * the store call, so {@link #closeHandle()} (write side) both invalidates the handle
+         * and waits for in-flight operations to finish before the DB frees or rewinds the
+         * record. Operations never take the DB lock, so this is the only thing that keeps a
+         * write that already passed the check from landing on a reused recid.
+         */
+        private final ReentrantReadWriteLock handleLock = new ReentrantReadWriteLock();
+        private volatile boolean closed;
+
+        /** Invalidates this handle and drains in-flight operations; the owning DB calls it. */
+        void closeHandle() {
+            handleLock.writeLock().lock();
+            try { closed = true; } finally { handleLock.writeLock().unlock(); }
+        }
+
+        private void checkOpen() { if (closed) throw new DBException.StoreClosed(HANDLE_CLOSED); }
 
         public Boolean(Store store, long recid) { this.store = store; this.recid = recid; }
 
         public long getRecid() { return recid; }
 
-        public boolean get() { return store.get(recid, DbSerializers.BOOLEAN); }
+        public boolean get() { handleLock.readLock().lock(); try { checkOpen(); return store.get(recid, DbSerializers.BOOLEAN); } finally { handleLock.readLock().unlock(); } }
 
-        public void set(boolean newValue) { store.update(recid, newValue, DbSerializers.BOOLEAN); }
+        public void set(boolean newValue) { handleLock.readLock().lock(); try { checkOpen(); store.update(recid, newValue, DbSerializers.BOOLEAN); } finally { handleLock.readLock().unlock(); } }
 
         public boolean compareAndSet(boolean expect, boolean update) {
-            return store.compareAndSwap(recid, expect, update, DbSerializers.BOOLEAN);
+            handleLock.readLock().lock();
+            try { checkOpen(); return store.compareAndSwap(recid, expect, update, DbSerializers.BOOLEAN); }
+            finally { handleLock.readLock().unlock(); }
         }
 
         public boolean getAndSet(boolean newValue) {
@@ -140,17 +210,36 @@ public final class Atomic {
     public static final class String {
         private final Store store;
         private final long recid;
+        /**
+         * Guards {@code closed}: operations hold the read side across the open check and
+         * the store call, so {@link #closeHandle()} (write side) both invalidates the handle
+         * and waits for in-flight operations to finish before the DB frees or rewinds the
+         * record. Operations never take the DB lock, so this is the only thing that keeps a
+         * write that already passed the check from landing on a reused recid.
+         */
+        private final ReentrantReadWriteLock handleLock = new ReentrantReadWriteLock();
+        private volatile boolean closed;
+
+        /** Invalidates this handle and drains in-flight operations; the owning DB calls it. */
+        void closeHandle() {
+            handleLock.writeLock().lock();
+            try { closed = true; } finally { handleLock.writeLock().unlock(); }
+        }
+
+        private void checkOpen() { if (closed) throw new DBException.StoreClosed(HANDLE_CLOSED); }
 
         public String(Store store, long recid) { this.store = store; this.recid = recid; }
 
         public long getRecid() { return recid; }
 
-        public java.lang.String get() { return store.get(recid, DbSerializers.STRING_NULLABLE); }
+        public java.lang.String get() { handleLock.readLock().lock(); try { checkOpen(); return store.get(recid, DbSerializers.STRING_NULLABLE); } finally { handleLock.readLock().unlock(); } }
 
-        public void set(java.lang.String newValue) { store.update(recid, newValue, DbSerializers.STRING_NULLABLE); }
+        public void set(java.lang.String newValue) { handleLock.readLock().lock(); try { checkOpen(); store.update(recid, newValue, DbSerializers.STRING_NULLABLE); } finally { handleLock.readLock().unlock(); } }
 
         public boolean compareAndSet(java.lang.String expect, java.lang.String update) {
-            return store.compareAndSwap(recid, expect, update, DbSerializers.STRING_NULLABLE);
+            handleLock.readLock().lock();
+            try { checkOpen(); return store.compareAndSwap(recid, expect, update, DbSerializers.STRING_NULLABLE); }
+            finally { handleLock.readLock().unlock(); }
         }
 
         public java.lang.String getAndSet(java.lang.String newValue) {
@@ -167,6 +256,23 @@ public final class Atomic {
     public static final class Var<E> {
         private final Store store;
         private final long recid;
+        /**
+         * Guards {@code closed}: operations hold the read side across the open check and
+         * the store call, so {@link #closeHandle()} (write side) both invalidates the handle
+         * and waits for in-flight operations to finish before the DB frees or rewinds the
+         * record. Operations never take the DB lock, so this is the only thing that keeps a
+         * write that already passed the check from landing on a reused recid.
+         */
+        private final ReentrantReadWriteLock handleLock = new ReentrantReadWriteLock();
+        private volatile boolean closed;
+
+        /** Invalidates this handle and drains in-flight operations; the owning DB calls it. */
+        void closeHandle() {
+            handleLock.writeLock().lock();
+            try { closed = true; } finally { handleLock.writeLock().unlock(); }
+        }
+
+        private void checkOpen() { if (closed) throw new DBException.StoreClosed(HANDLE_CLOSED); }
         private final Serializer<E> serializer;
 
         public Var(Store store, long recid, Serializer<E> serializer) {
@@ -176,12 +282,14 @@ public final class Atomic {
         public long getRecid() { return recid; }
         public Serializer<E> serializer() { return serializer; }
 
-        public E get() { return store.get(recid, serializer); }
+        public E get() { handleLock.readLock().lock(); try { checkOpen(); return store.get(recid, serializer); } finally { handleLock.readLock().unlock(); } }
 
-        public void set(E newValue) { store.update(recid, newValue, serializer); }
+        public void set(E newValue) { handleLock.readLock().lock(); try { checkOpen(); store.update(recid, newValue, serializer); } finally { handleLock.readLock().unlock(); } }
 
         public boolean compareAndSet(E expect, E update) {
-            return store.compareAndSwap(recid, expect, update, serializer);
+            handleLock.readLock().lock();
+            try { checkOpen(); return store.compareAndSwap(recid, expect, update, serializer); }
+            finally { handleLock.readLock().unlock(); }
         }
 
         public E getAndSet(E newValue) {

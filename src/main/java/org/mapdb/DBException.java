@@ -30,6 +30,7 @@ public class DBException extends RuntimeException {
     /** Operation on a closed store. */
     public static class StoreClosed extends DBException {
         public StoreClosed() { super("Store was closed"); }
+        public StoreClosed(String message) { super(message); }
     }
 
     /** Store verify() found an invariant violation. */

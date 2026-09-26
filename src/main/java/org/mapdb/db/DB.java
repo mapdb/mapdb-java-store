@@ -371,9 +371,13 @@ public class DB implements Closeable {
                 throw new UnsupportedOperationException(
                         "rollback requires a transactional store (DBMaker.fileDB(f).transactionEnable())");
             }
-            ((StoreTx) store).rollback();
+            // Invalidate and drain cached handles BEFORE the store rewinds: an atomic
+            // operation that already passed its handle's open check must finish against
+            // the pre-rollback state, not land after the rewind (or after a later reuse of
+            // a recid the rollback freed).
             for (Object instance : instances.values()) closeRuntimeHandle(instance);
             instances.clear();
+            ((StoreTx) store).rollback();
             for (ScheduledFuture<?> task : expirationTasks.values()) task.cancel(false);
             expirationTasks.clear();
         } finally {
@@ -724,8 +728,11 @@ public class DB implements Closeable {
      * <p><b>Limitation:</b> mapdb collections have no {@code destroy()} primitive.
      * For maps/sets/lists this calls {@code clear()} (freeing entry records) but the
      * structural root/directory records are <em>leaked</em> until the store is
-     * compacted or discarded. Atomic records are freed exactly. A collection created
-     * with a custom codec that cannot be re-derived is unlinked without clearing.
+     * compacted or discarded. Atomic records are freed exactly, and the live atomic
+     * handle obtained from this DB (if any) is invalidated so it throws
+     * {@link DBException.StoreClosed} rather than writing a recid the store may reuse.
+     * A collection created with a custom codec that cannot be re-derived is unlinked
+     * without clearing.
      *
      * @return {@code true} if the collection existed
      */
@@ -741,15 +748,15 @@ public class DB implements Closeable {
             // a collection object holds its own recids independent of the catalog).
             boolean atomic = isAtomicType(type);
             long atomicRecid = -1;
-            Object obj = null;
+            // The cached live handle (if any) is captured for BOTH kinds so it can be
+            // invalidated below: a stale atomic handle would otherwise keep writing a
+            // recid the store reuses for the next collection (astra25 F3).
+            Object obj = instances.get(name);
             if (atomic) {
                 String r = cat.get(name + "#recid");
                 if (r != null) atomicRecid = Long.parseLong(r);
-            } else {
-                obj = instances.get(name);
-                if (obj == null) {
-                    try { obj = get(name); } catch (RuntimeException ignore) { /* custom codec: cannot clear */ }
-                }
+            } else if (obj == null) {
+                try { obj = get(name); } catch (RuntimeException ignore) { /* custom codec: cannot clear */ }
             }
 
             // Unlink FIRST so a subsequent teardown failure leaks records rather than
@@ -759,6 +766,11 @@ public class DB implements Closeable {
             catalogSaveInternal(cat);
             instances.remove(name);
             cancelExpirationFor(obj);
+            // Invalidate and drain the cached atomic handle BEFORE freeing its record, so
+            // an operation that already passed the handle's open check cannot land on a
+            // recid the store has meanwhile handed to another collection. (Queues and
+            // collections are closed after the clear below, which needs them live.)
+            if (atomic) closeRuntimeHandle(obj);
 
             // THEN best-effort free the records.
             try {
@@ -806,9 +818,20 @@ public class DB implements Closeable {
         if (task != null) task.cancel(false);
     }
 
+    /**
+     * Invalidates a live handle the DB no longer vouches for (after delete, rollback or
+     * close). Queues stop accepting operations; atomics start throwing
+     * {@link DBException.StoreClosed} instead of touching a recid that may since have
+     * been reused. Maps/sets/lists have no close primitive and are left as documented.
+     */
     private void closeRuntimeHandle(Object object) {
         if (object instanceof PersistentBlockingQueue)
             ((PersistentBlockingQueue<?>) object).closeHandle();
+        else if (object instanceof Atomic.Long) ((Atomic.Long) object).closeHandle();
+        else if (object instanceof Atomic.Integer) ((Atomic.Integer) object).closeHandle();
+        else if (object instanceof Atomic.Boolean) ((Atomic.Boolean) object).closeHandle();
+        else if (object instanceof Atomic.String) ((Atomic.String) object).closeHandle();
+        else if (object instanceof Atomic.Var) ((Atomic.Var<?>) object).closeHandle();
     }
 
     /** Renames a collection (catalog-key rewrite only; recids and data are untouched). */
