@@ -182,6 +182,59 @@ public class StoreWALDeltaLsnTest {
         }
     }
 
+    @Test public void empty_commit_releases_encoder_reservation_without_writing_a_section() throws Exception {
+        File f = newFile("empty-commit");
+        long recid;
+        try (StoreWAL s = new StoreWAL(f, false, true)) {
+            recid = newAppendable(s, 256);
+            List<Long> before = sectionLsns(f);
+            List<Long> emptyLsns = new ArrayList<>();
+            for (int i = 0; i < 2; i++) {
+                assertEquals(0, s.append(recid, (out, lsn) -> emptyLsns.add(lsn)));
+                s.commit();
+                assertEquals("empty commit emits no section", before, sectionLsns(f));
+            }
+            List<Long> nonemptyLsns = new ArrayList<>();
+            s.append(recid, recording(nonemptyLsns, 16));
+            assertEquals("empty commits do not burn the next LSN", emptyLsns.get(0), nonemptyLsns.get(0));
+            s.commit();
+            assertEquals(nonemptyLsns.get(0), sectionLsns(f).get(before.size()));
+            assertEquals(16, s.get(recid, Fixtures.RAW).length);
+
+            s.append(recid, (out, lsn) -> { });
+            s.commit();
+            s.checkpoint();
+            s.append(recid, new byte[0], 0, 0);
+            s.commit();
+            s.checkpoint();
+            s.verify();
+        }
+        try (StoreWAL s = new StoreWAL(f, false, true)) {
+            assertEquals(16, s.get(recid, Fixtures.RAW).length);
+            s.verify();
+        }
+    }
+
+    @Test public void empty_commit_releases_reservation_for_incremental_maintenance() {
+        File f = newFile("empty-maintenance");
+        try (StoreWAL s = new StoreWAL(f, false, true)) {
+            s.setMinLogBytes(0);
+            s.setSegmentBytes(SEG_HDR + SEC_HDR);
+            long recid = newAppendable(s, 256);
+            s.put(new byte[64], Fixtures.RAW);
+            s.commit();
+            assertTrue(s.testStartCleanCycle());
+            s.append(recid, (out, lsn) -> { });
+            assertEquals("reservation defers maintenance", -1,
+                    s.maintenanceCleanStep(MaintenanceBudget.defaultBudget()));
+            s.commit();
+            assertTrue("empty commit releases maintenance",
+                    s.maintenanceCleanStep(MaintenanceBudget.defaultBudget()) >= 0);
+            s.checkpoint();
+            s.verify();
+        }
+    }
+
     /** The raw byte[] path takes no reservation, so it must not disturb checkpointing. */
     @Test public void raw_append_path_takes_no_reservation() {
         File f = newFile("raw");

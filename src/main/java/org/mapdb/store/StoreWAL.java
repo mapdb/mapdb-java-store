@@ -1827,7 +1827,12 @@ public class StoreWAL implements StoreDelta, StoreTx {
         try {
             checkClosed();
             checkWritable();
-            if (staged.isEmpty()) return;
+            if (staged.isEmpty()) {
+                // An encoder may reserve an LSN while emitting no bytes. An
+                // empty commit ends that transaction without consuming a section.
+                txLsn = 0;
+                return;
+            }
 
             // classify all ops BEFORE applying any (apply shifts inner state)
             long[] recids = staged.keySet().stream().mapToLong(Long::longValue).sorted().toArray();
