@@ -279,8 +279,8 @@ public class OrderedNavigableView<K, V> extends AbstractMap<K, V> implements Nav
     @Override public Set<Map.Entry<K, V>> entrySet() {
         return new AbstractSet<>() {
             @Override public Iterator<Map.Entry<K, V>> iterator() {
-                Iterator<Map.Entry<K, V>> base = orientedRange();
                 return new Iterator<>() {
+                    Iterator<Map.Entry<K, V>> base = orientedRange();
                     K lastKey;
                     boolean removable;
 
@@ -297,6 +297,19 @@ public class OrderedNavigableView<K, V> extends AbstractMap<K, V> implements Nav
                         if (!removable) throw new IllegalStateException();
                         removable = false;
                         a.remove(lastKey);
+                        // Own removal can flush a BufferTree and invalidate the
+                        // DFS's saved child pointers and inherited operations.
+                        // Resume beyond the returned key, discarding even state
+                        // prefetched by hasNext, while retaining the other bound.
+                        if (descending) {
+                            base = rangeEmpty(lo, loInc, lastKey, false)
+                                    ? Collections.emptyIterator()
+                                    : a.descendingEntryIterator(lo, loInc, lastKey, false);
+                        } else {
+                            base = rangeEmpty(lastKey, false, hi, hiInc)
+                                    ? Collections.emptyIterator()
+                                    : a.entryIterator(lastKey, false, hi, hiInc);
+                        }
                     }
                 };
             }

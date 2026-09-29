@@ -1368,6 +1368,81 @@ public abstract class BufferTreeMapTCK {
         assertEquals(new ArrayList<>(oracle.navigableKeySet()), new ArrayList<>(m.navigableKeySet()));
     }
 
+    @Test public void iteratorOwnedRemovalVisitsEveryKeyAcrossLeafBoundaries() {
+        for (boolean descending : new boolean[]{false, true}) {
+            BufferTreeMap<Long, String> m = BufferTreeMap.create(store, LongFormat.INSTANCE, org.mapdb.ser.StringGroupFormat.INSTANCE, 32, 4096);
+            TreeMap<Long, String> oracle = new TreeMap<>();
+            for (long k = 0; k < 1000; k++) { m.put(k, "v"); oracle.put(k, "v"); }
+            store.commit();
+            NavigableMap<Long, String> view = descending ? m.descendingMap() : m;
+            NavigableMap<Long, String> expected = descending ? oracle.descendingMap() : oracle;
+            Iterator<Map.Entry<Long, String>> it = view.entrySet().iterator();
+            Iterator<Map.Entry<Long, String>> oi = expected.entrySet().iterator();
+            while (oi.hasNext()) {
+                assertTrue("missing key during own removals", it.hasNext());
+                assertEquals(oi.next(), it.next());
+                // Advance/prefetch before remove as a caller is allowed to do.
+                assertEquals(oi.hasNext(), it.hasNext());
+                it.remove();
+                oi.remove();
+                try { it.remove(); fail("a second remove must fail"); }
+                catch (IllegalStateException expectedException) { /* correct */ }
+            }
+            assertFalse(it.hasNext());
+            assertTrue("every key was visited and removed", m.isEmpty());
+        }
+    }
+
+    @Test public void keySetRemoveIfDeletesAllKeysAcrossLeafBoundaries() {
+        for (int count : new int[]{181, 1000, 10000}) {
+            BufferTreeMap<Long, String> m = BufferTreeMap.create(store, LongFormat.INSTANCE, org.mapdb.ser.StringGroupFormat.INSTANCE, 32, 4096);
+            for (long k = 0; k < count; k++) m.put(k, "v");
+            store.commit();
+            assertTrue(m.keySet().removeIf(k -> true));
+            assertTrue("removeIf left keys at count=" + count, m.isEmpty());
+            assertFalse(m.keySet().removeIf(k -> true));
+            m.flushAll();
+            assertEquals(0L, m.sizeLong());
+        }
+    }
+
+    @Test public void boundedIteratorRemovalPreservesRangeAndOppositeBound() {
+        for (boolean descending : new boolean[]{false, true}) {
+            BufferTreeMap<Long, String> m = BufferTreeMap.create(store, LongFormat.INSTANCE, org.mapdb.ser.StringGroupFormat.INSTANCE, 32, 4096);
+            TreeMap<Long, String> oracle = new TreeMap<>();
+            for (long k = 0; k < 1000; k++) { m.put(k, "v"); oracle.put(k, "v"); }
+            store.commit();
+            NavigableMap<Long, String> view = m.subMap(200L, false, 800L, true);
+            NavigableMap<Long, String> expected = oracle.subMap(200L, false, 800L, true);
+            if (descending) { view = view.descendingMap(); expected = expected.descendingMap(); }
+            Iterator<Long> it = view.navigableKeySet().iterator();
+            Iterator<Long> oi = expected.navigableKeySet().iterator();
+            try { it.remove(); fail("remove before next must fail"); }
+            catch (IllegalStateException expectedException) { /* correct */ }
+            while (oi.hasNext()) {
+                assertTrue(it.hasNext());
+                Long key = oi.next();
+                assertEquals(key, it.next());
+                assertEquals(oi.hasNext(), it.hasNext());
+                if (key % 3 != 0) { it.remove(); oi.remove(); }
+            }
+            assertFalse(it.hasNext());
+            assertEquals(new ArrayList<>(oracle.entrySet()), new ArrayList<>(m.entrySet()));
+            m.flushAll();
+            assertEquals(new ArrayList<>(oracle.entrySet()), new ArrayList<>(m.entrySet()));
+        }
+    }
+
+    @Test public void valuesRemoveIfPreservesUnmatchedEntriesOnSmallAndLargeTrees() {
+        for (int count : new int[]{3, 1000}) {
+            BufferTreeMap<Long, Long> m = longMap(32, 4096);
+            TreeMap<Long, Long> oracle = new TreeMap<>();
+            for (long k = 0; k < count; k++) { m.put(k, k); oracle.put(k, k); }
+            assertEquals(oracle.values().removeIf(v -> v % 3 == 0), m.values().removeIf(v -> v % 3 == 0));
+            assertEquals(new ArrayList<>(oracle.entrySet()), new ArrayList<>(m.entrySet()));
+        }
+    }
+
     /** All fromInc×toInc combinations on subMap/headMap/tailMap; exclusive-empty ranges;
      *  out-of-range navigation on bounded views; nested views not widening exclusive parent
      *  bounds; out-of-parent-range bound → IAE; from>to → IAE. */
