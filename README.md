@@ -124,8 +124,10 @@ binary-searchable serialized representation.
   the *reference* `StoreDelta` implementation and fuzz oracle.
 - **`StoreDirect`** — standalone durable paged volume (1 MB slices, heap/direct
   or mmap file), on-volume recid index pages, persistent long-stack free lists,
-  crash-detecting header checksum, 16-aligned data allocation, and linked
-  chunk chains for records above the plain ~1 MiB capacity.
+  header-metadata checksum, 16-aligned data allocation, and linked
+  chunk chains for records above the plain ~1 MiB capacity. It is non-transactional:
+  in-place writes can leave the header checksum valid after an unclean shutdown;
+  reopening does not guarantee committed or consistent record contents.
 - **`StoreWAL`** — `StoreTx` + `StoreDelta`: stages mutations in memory, commit
   writes a WAL section (appends logged as deltas — `T_APPEND`) and fsyncs
   before applying to the inner StoreDirect.

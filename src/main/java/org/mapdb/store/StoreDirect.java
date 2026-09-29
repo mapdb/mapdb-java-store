@@ -61,9 +61,11 @@ import java.util.concurrent.locks.ReadWriteLock;
  *
  * Durability model: crash-unsafe by design. Mutations write straight
  * to the (possibly mmap'd) volume; {@link #commit()} stamps the header checksum and
- * syncs — after a clean commit/close the store reopens; after a crash the checksum
- * mismatch is DETECTED on reopen and open refuses (repair/transactions are
- * {@link StoreWAL}'s job, which layers over an in-memory instance of this store).
+ * syncs. Open rejects a mismatched header checksum, but that checksum covers header
+ * metadata rather than record contents. In-place updates can leave it unchanged,
+ * so an unclean reopen may accept uncommitted or partially persisted contents.
+ * There is no rollback or general crash-detection guarantee; crash recovery is
+ * {@link StoreWAL}'s job, which layers over an in-memory instance of this store.
  *
  * Locking: segment R/W locks by recid low bits; one structural lock
  * for allocator state (header vars, free lists, index page table). Order: segment,
