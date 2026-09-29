@@ -451,7 +451,8 @@ public final class Serializers {
         }
         @Override public int compare(BigDecimal a, BigDecimal b) { return a.compareTo(b); }
         @Override public boolean naturalOrder() { return true; }
-        @Override public boolean equalsBySerializedBytes() { return true; }
+        // Numerical equality ignores scale; serialization preserves it.
+        @Override public boolean equalsBySerializedBytes() { return false; }
     };
 
     public static final Serializer<Date> DATE = new Serializer<>() {
