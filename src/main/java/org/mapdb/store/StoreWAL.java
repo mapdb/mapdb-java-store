@@ -518,9 +518,9 @@ public class StoreWAL implements StoreDelta, StoreTx {
      *     shorter than its length: truncate, force, rotate (W7), fsync the directory.</li>
      * </ol>
      *
-     * <p>R5 before R6 is a performance choice, not a correctness one — by Q5 §2.3 replaying
-     * those segments changes nothing — but it is fixed here so the tier-1 fixture oracle can
-     * assert an exact file set.
+     * <p>R5 before R6 is the adopted recovery order (Q5 §4). Replay or the skip audit can
+     * refuse after residue or superseded segments have been removed; failed open is not a
+     * general unchanged-namespace guarantee. Read-only recovery suppresses those deletions.
      */
     private void recover() throws IOException {
         if (segs.segments().isEmpty()) {                                   // N1: fresh store
@@ -554,10 +554,9 @@ public class StoreWAL implements StoreDelta, StoreTx {
                 if (s != active) s.release();
             }
         }
-        // The audit runs BEFORE R7's truncate: an open that refuses must have mutated nothing
-        // (Q5 §2.1, and the tier-1 oracle asserts file equality on every corruption row). The
-        // bytes a torn tail would lose were never a valid section, so this is conformance and
-        // forensics rather than data — but a port that reordered it would fail the fixtures.
+        // The audit runs BEFORE R7's truncate, preserving the active segment's tail when
+        // replay refuses. R2/R5 may already have deleted residue or superseded segments;
+        // the adopted v3 oracle permits those namespace mutations before refusal.
         auditSkippedAppends();
         nextLsn = maxValidSectionLsn + 1;                                  // R7
         activeSeg = active;
