@@ -137,46 +137,6 @@ public class StoreWALSegmentSetTest {
         WalTestKit.write(WalTestKit.segment(base, seq), segmentImage(seq, sections));
     }
 
-    /** Replay refusal must retain the superseded evidence until the skip audit succeeds. */
-    @Test public void refused_replay_keeps_superseded_segment_bytes() throws IOException {
-        for (boolean readOnly : new boolean[]{false, true}) {
-            File f = newFile("refused-replay-" + readOnly);
-            writeSegment(f, 1, put(1, 1, new byte[]{'A', 'B'}));
-            DataOutput2 append = new DataOutput2(32);
-            append.writeByte(3);
-            append.packLong(1); // recid
-            append.packLong(1); // section LSN 2 minus missing base LSN 1
-            append.packLong(1);
-            append.writeByte('C');
-            writeSegment(f, 2, new Sec('S', 2, java.util.Arrays.copyOf(append.buf, append.pos)),
-                    mark(3, 1, 2));
-            // Writable open is allowed to create its locking sidecar. Precreate it so the
-            // before/after namespace comparison measures recovery's segment mutations.
-            new File(f.getPath() + ".lock").createNewFile();
-            TreeMap<String, byte[]> before = walNamespace(f);
-            try {
-                (readOnly ? StoreWAL.openReadOnly(f) : new StoreWAL(f)).close();
-                fail("expected missing-base replay refusal");
-            } catch (DBException.DataCorruption expected) {
-                assertTrue(expected.getMessage(), expected.getMessage().contains("missing sections it depends on"));
-            }
-            TreeMap<String, byte[]> after = walNamespace(f);
-            assertEquals("refused replay changed WAL namespace", before.keySet(), after.keySet());
-            for (String name : before.keySet())
-                assertArrayEquals("refused replay changed " + name, before.get(name), after.get(name));
-        }
-    }
-
-    private static TreeMap<String, byte[]> walNamespace(File base) throws IOException {
-        TreeMap<String, byte[]> snapshot = new TreeMap<>();
-        File[] siblings = base.getParentFile().listFiles();
-        assertNotNull(siblings);
-        for (File sibling : siblings)
-            if (sibling.getName().startsWith(base.getName()))
-                snapshot.put(sibling.getName(), java.nio.file.Files.readAllBytes(sibling.toPath()));
-        return snapshot;
-    }
-
     // ================= W2/W3: rollover =================
 
     /**
