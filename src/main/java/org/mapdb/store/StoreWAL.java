@@ -511,16 +511,16 @@ public class StoreWAL implements StoreDelta, StoreTx {
      * <li><b>R4</b> adjudicate — now that {@code cleanedThroughSeq} is known, discard every
      *     verdict from a superseded segment, throw the rest, and check N3 and S9 over the
      *     retained set.</li>
-     * <li><b>R5</b> unlink the superseded segments, then fsync the directory.</li>
      * <li><b>R6</b> pass 2 — apply the §4.2 table in ascending (segment, offset) order, then the
      *     skip audit.</li>
+     * <li><b>R5</b> after replay validation succeeds, unlink superseded segments and fsync.</li>
      * <li><b>R7</b> finish — {@code nextLsn}, and IFF the active segment's valid prefix is
      *     shorter than its length: truncate, force, rotate (W7), fsync the directory.</li>
      * </ol>
      *
-     * <p>R5 before R6 is a performance choice, not a correctness one — by Q5 §2.3 replaying
-     * those segments changes nothing — but it is fixed here so the tier-1 fixture oracle can
-     * assert an exact file set.
+     * <p>Validate the retained replay before deleting superseded evidence: a CRC-valid log
+     * can pass namespace adjudication yet fail replay or the skip audit. Successful recovery
+     * has the same final segment set; a replay corruption refusal keeps superseded segments.
      */
     private void recover() throws IOException {
         if (segs.segments().isEmpty()) {                                   // N1: fresh store
@@ -532,7 +532,6 @@ public class StoreWAL implements StoreDelta, StoreTx {
         Segment active = segs.active();
         long cleanedThroughSeq = pass1(active);
         List<Segment> retained = adjudicate(cleanedThroughSeq);
-        segs.unlinkThrough(cleanedThroughSeq);                             // R5
         // Q5 R3 phrases this as "the highest LSN of ANY valid section". Taken over the RETAINED
         // set instead, deliberately, and the two agree on every conforming image: K4 puts a
         // mark's own segment above everything it authorizes removing, and LSNs ascend with
@@ -554,11 +553,12 @@ public class StoreWAL implements StoreDelta, StoreTx {
                 if (s != active) s.release();
             }
         }
-        // The audit runs BEFORE R7's truncate: an open that refuses must have mutated nothing
+        // The audit runs BEFORE R7's truncate: replay corruption refusal must preserve the segment bytes
         // (Q5 §2.1, and the tier-1 oracle asserts file equality on every corruption row). The
         // bytes a torn tail would lose were never a valid section, so this is conformance and
         // forensics rather than data — but a port that reordered it would fail the fixtures.
         auditSkippedAppends();
+        segs.unlinkThrough(cleanedThroughSeq);                             // R5, after R6 validation
         nextLsn = maxValidSectionLsn + 1;                                  // R7
         activeSeg = active;
         if (!readOnly && active.validEnd < active.fileLen) {
