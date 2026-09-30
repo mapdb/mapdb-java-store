@@ -50,6 +50,15 @@ public interface Serializer<A> {
      * serializer already stores lossily (e.g. ill-formed strings under
      * {@link Serializers#STRING}) are outside that domain: they conflate on write
      * regardless, and byte equality simply observes the stored identity.
+     *
+     * <p>When used for ordered keys, byte identity must also be equivalent to
+     * zero under the collection's effective key comparison ({@link #compare},
+     * or an overriding {@link GroupFormat#compare}). This is distinct from
+     * {@link #equals}: a key format whose comparison equates differently encoded
+     * keys must not use this capability. For example, BigDecimal 1.0 and 1.00
+     * compare as equal but have different serialized scales, so
+     * {@link Serializers#BIG_DECIMAL} opts out even though its serialized bytes
+     * distinguish those values under its scale-sensitive equality.
      */
     default boolean equalsBySerializedBytes() { return false; }
 }
