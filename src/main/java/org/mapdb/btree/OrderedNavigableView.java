@@ -297,6 +297,7 @@ public class OrderedNavigableView<K, V> extends AbstractMap<K, V> implements Nav
                         if (!removable) throw new IllegalStateException();
                         removable = false;
                         a.remove(lastKey);
+                        if (!a.requiresIteratorReseekAfterRemove(descending)) return;
                         // Own removal can flush a BufferTree and invalidate the
                         // DFS's saved child pointers and inherited operations.
                         // Resume beyond the returned key, discarding even state

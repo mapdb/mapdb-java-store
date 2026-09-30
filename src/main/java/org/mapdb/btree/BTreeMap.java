@@ -2010,6 +2010,11 @@ public class BTreeMap<K, V> extends AbstractMap<K, V>
         @Override public Iterator<Map.Entry<K, V>> entryIterator(K lo, boolean loInc, K hi, boolean hiInc) {
             return BTreeMap.this.entryIterator(lo, loInc, hi, hiInc);
         }
+        @Override public boolean requiresIteratorReseekAfterRemove(boolean descending) {
+            // The descending iterator owns an immutable-entry snapshot. Its
+            // remaining entries survive removal; ascending live leaves still reseek.
+            return !descending;
+        }
         @Override public Iterator<Map.Entry<K, V>> descendingEntryIterator(K lo, boolean loInc, K hi, boolean hiInc) {
             return BTreeMap.this.descendingEntryIterator(lo, loInc, hi, hiInc);
         }

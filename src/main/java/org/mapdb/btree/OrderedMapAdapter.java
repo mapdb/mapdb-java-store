@@ -55,6 +55,11 @@ public interface OrderedMapAdapter<K, V> {
      *  Weakly consistent, same as the ascending iterator. */
     Iterator<Map.Entry<K, V>> descendingEntryIterator(K lo, boolean loInc, K hi, boolean hiInc);
 
+    /** Whether this orientation's cursor must be rebuilt after its own removal.
+     *  Conservative default preserves cursors whose saved traversal state can be
+     *  invalidated by a backing mutation. Snapshot cursors may opt out. */
+    default boolean requiresIteratorReseekAfterRemove(boolean descending) { return true; }
+
     /**
      * Atomically remove and return the LEAST in-range entry, or null when the range is
      * empty. Backing (ascending) orientation: a descending view maps its
